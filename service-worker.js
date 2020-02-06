@@ -14,7 +14,7 @@
 importScripts("https://storage.googleapis.com/workbox-cdn/releases/4.3.1/workbox-sw.js");
 
 importScripts(
-  "/foreverthebeatels/precache-manifest.d086ae54558137e6929f083aa4adb036.js"
+  "/foreverthebeatels/precache-manifest.c240c3e93b722d9f567848d58b55f638.js"
 );
 
 self.addEventListener('message', (event) => {
