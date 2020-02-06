@@ -1,15 +1,15 @@
 {
   "files": {
     "main.css": "/foreverthebeatels/static/css/main.9eb59f31.chunk.css",
-    "main.js": "/foreverthebeatels/static/js/main.3e92a590.chunk.js",
-    "main.js.map": "/foreverthebeatels/static/js/main.3e92a590.chunk.js.map",
+    "main.js": "/foreverthebeatels/static/js/main.e2e8d2b9.chunk.js",
+    "main.js.map": "/foreverthebeatels/static/js/main.e2e8d2b9.chunk.js.map",
     "runtime-main.js": "/foreverthebeatels/static/js/runtime-main.b44a5005.js",
     "runtime-main.js.map": "/foreverthebeatels/static/js/runtime-main.b44a5005.js.map",
     "static/css/2.87861332.chunk.css": "/foreverthebeatels/static/css/2.87861332.chunk.css",
     "static/js/2.a4be8732.chunk.js": "/foreverthebeatels/static/js/2.a4be8732.chunk.js",
     "static/js/2.a4be8732.chunk.js.map": "/foreverthebeatels/static/js/2.a4be8732.chunk.js.map",
     "index.html": "/foreverthebeatels/index.html",
-    "precache-manifest.c0cad711b17c473c70fe258c2b15582c.js": "/foreverthebeatels/precache-manifest.c0cad711b17c473c70fe258c2b15582c.js",
+    "precache-manifest.d086ae54558137e6929f083aa4adb036.js": "/foreverthebeatels/precache-manifest.d086ae54558137e6929f083aa4adb036.js",
     "service-worker.js": "/foreverthebeatels/service-worker.js",
     "static/css/2.87861332.chunk.css.map": "/foreverthebeatels/static/css/2.87861332.chunk.css.map",
     "static/css/main.9eb59f31.chunk.css.map": "/foreverthebeatels/static/css/main.9eb59f31.chunk.css.map",
@@ -42,6 +42,6 @@
     "static/css/2.87861332.chunk.css",
     "static/js/2.a4be8732.chunk.js",
     "static/css/main.9eb59f31.chunk.css",
-    "static/js/main.3e92a590.chunk.js"
+    "static/js/main.e2e8d2b9.chunk.js"
   ]
 }
