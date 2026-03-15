@@ -398,10 +398,20 @@
         <div class="field"><label>MIN BUYERS</label><input type="number" id="s-watchMinBuyers" value="3" min="1" oninput="save('watchMinBuyers',+this.value)"></div>
       </div>
       <div class="row2">
+        <div class="field"><label>MIN FILL SPEED (SEC, 0=off)</label><input type="number" id="s-watchMinVelocitySecs" value="2" min="0" step="0.5" oninput="save('watchMinVelocitySecs',+this.value)"></div>
         <div class="field"><label>MAX FILL SPEED (SEC, 0=off)</label><input type="number" id="s-watchMaxVelocitySecs" value="30" min="0" oninput="save('watchMaxVelocitySecs',+this.value)"></div>
-        <div class="field"><label>MIN SOL VOL (0=off)</label><input type="number" id="s-watchMinSolVol" value="0" min="0" step="0.01" oninput="save('watchMinSolVol',+this.value)"></div>
       </div>
+      <div class="field"><label>MIN SOL VOL (0=off)</label><input type="number" id="s-watchMinSolVol" value="0" min="0" step="0.01" oninput="save('watchMinSolVol',+this.value)"></div>
       <div class="field"><label>MAX PUMP BEFORE ENTRY % (0=off)</label><input type="number" id="s-watchMaxPumpPct" value="200" min="0" oninput="save('watchMaxPumpPct',+this.value)"></div>
+    </div>
+
+    <div class="sec-head" onclick="toggleSec(this)">SYMBOL COOLDOWN <span>▾</span></div>
+    <div class="sec-body">
+      <div class="tog-wrap">
+        <label>BLOCK SAME SYMBOL AFTER TRADE</label>
+        <label class="tog"><input type="checkbox" id="s-symCooldownEnabled" checked onchange="save('symCooldownEnabled',this.checked)"><span class="tog-sl"></span></label>
+      </div>
+      <div class="field"><label>COOLDOWN AFTER TRADE (SEC)</label><input type="number" id="s-symCooldownSecs" value="300" min="10" oninput="save('symCooldownSecs',+this.value)"></div>
     </div>
 
     <button id="start-btn" onclick="toggleBot()">▶ START BOT</button>
@@ -470,7 +480,8 @@ const DEFAULTS = {
   flatlineEnabled:true, flatlineSeconds:20, flatlinePct:2,
   scaleOutEnabled:false, scaleOutTp1Pct:20, scaleOutSellPct:50,
   watchEnabled:true, watchSeconds:10, watchMinBuys:3, watchMinBuyers:3,
-  watchMaxVelocitySecs:30, watchMinSolVol:0, watchMaxPumpPct:200,
+  watchMinVelocitySecs:2, watchMaxVelocitySecs:30, watchMinSolVol:0, watchMaxPumpPct:200,
+  symCooldownEnabled:true, symCooldownSecs:300,
 };
 
 let cfg = { ...DEFAULTS };
@@ -491,13 +502,14 @@ function applyToUI() {
   ['privateKey','publicKey','solAmount','maxPositions','slippage','cooldown',
    'minMcap','maxMcap','minSolInPool','tpPct','slPct','trailPct','trailActivatePct','timerMin',
    'flatlineSeconds','flatlinePct','scaleOutTp1Pct','scaleOutSellPct',
-   'watchSeconds','watchMinBuys','watchMinBuyers','watchMaxVelocitySecs','watchMinSolVol','watchMaxPumpPct'].forEach(k => {
+   'watchSeconds','watchMinBuys','watchMinBuyers','watchMinVelocitySecs','watchMaxVelocitySecs','watchMinSolVol','watchMaxPumpPct',
+   'symCooldownSecs'].forEach(k => {
     const el = document.getElementById('s-'+k);
     if (el) el.value = cfg[k];
   });
   const feeEl = document.getElementById('s-priorityFee');
   if (feeEl) feeEl.value = cfg.priorityFee;
-  ['scamFilter','tpEnabled','slEnabled','trailEnabled','timerEnabled','flatlineEnabled','scaleOutEnabled','watchEnabled'].forEach(k => {
+  ['scamFilter','tpEnabled','slEnabled','trailEnabled','timerEnabled','flatlineEnabled','scaleOutEnabled','watchEnabled','symCooldownEnabled'].forEach(k => {
     const el = document.getElementById('s-'+k);
     if (el) el.checked = cfg[k];
   });
@@ -538,6 +550,7 @@ function toggleKey() {
 let positions       = new Map();   // mint → open pos
 let closedPositions = new Map();   // mint → closed pos (kept for display)
 let watchlist       = new Map();   // mint → observation entry
+let recentSymbols   = new Map();   // normalised symbol → last trade timestamp
 let closedTrades    = [];
 let session = newSession();
 let ws = null;
@@ -570,6 +583,7 @@ function startBot() {
   closedPositions.clear();
   watchlist.forEach(w => clearTimeout(w.timer));
   watchlist.clear();
+  recentSymbols.clear();
   closedTrades = [];
 
   document.getElementById('positions-grid').innerHTML = '<div id="empty-msg">Waiting for new tokens...</div>';
@@ -701,6 +715,19 @@ function handleCreate(ev) {
     return;
   }
 
+  // Symbol cooldown — don't re-buy same symbol too soon
+  if (cfg.symCooldownEnabled && cfg.symCooldownSecs > 0) {
+    const symKey = (symbol || name || '').toLowerCase().trim();
+    if (symKey) {
+      const last = recentSymbols.get(symKey);
+      if (last && Date.now() - last < cfg.symCooldownSecs * 1000) {
+        const secsLeft = Math.ceil((cfg.symCooldownSecs * 1000 - (Date.now() - last)) / 1000);
+        addLog('skip', `SKIP ${tag} — symbol cooldown ${secsLeft}s`);
+        return;
+      }
+    }
+  }
+
   // Scam filter
   if (cfg.scamFilter) {
     if (mintAuthority != null) {
@@ -796,7 +823,15 @@ function handleWatchUpdate(ev) {
   const tag          = entry.symbol.toUpperCase();
   const velocitySecs = (Date.now() - entry.startedAt) / 1000;
 
-  // Velocity filter — too slow means cold momentum
+  // Velocity filter — too fast means bots/snipers, too slow means cold momentum
+  if (cfg.watchMinVelocitySecs > 0 && velocitySecs < cfg.watchMinVelocitySecs) {
+    clearTimeout(entry.timer);
+    watchlist.delete(mint);
+    addLog('skip', `BOT ${tag} — confirmed in ${velocitySecs.toFixed(1)}s (min ${cfg.watchMinVelocitySecs}s) → SKIP`);
+    renderWatchCards();
+    return;
+  }
+
   if (cfg.watchMaxVelocitySecs > 0 && velocitySecs > cfg.watchMaxVelocitySecs) {
     clearTimeout(entry.timer);
     watchlist.delete(mint);
@@ -1052,6 +1087,10 @@ async function executeSell(mint, reason, attempt = 1) {
     const pnlStr  = fmtPnl(pnl);
     const logType = pnl >= 0 ? 'sell' : 'loss';
     addLog(logType, `SOLD ${pos.name} [${reason}] PNL:${pnlStr} tx:${String(txSig).slice(0,20)}...`);
+
+    // Record symbol to suppress re-entry for symCooldownSecs
+    const symKey = (pos.symbol || pos.name || '').toLowerCase().trim();
+    if (symKey) recentSymbols.set(symKey, Date.now());
 
     closedTrades.unshift({ name:pos.name, reason, pnl, time: now() });
     if (closedTrades.length > 20) closedTrades.pop();
