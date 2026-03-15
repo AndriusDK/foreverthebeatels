@@ -550,11 +550,17 @@ function connectWS() {
     addLog('sys', 'Stream connected');
   };
 
+  let rawCount = 0;
   ws.onmessage = (e) => {
-    try { handleEvent(JSON.parse(e.data)); } catch(_) {}
+    rawCount++;
+    // Log first 3 raw messages so we can see the server response format
+    if (rawCount <= 3) addLog('sys', `RAW MSG #${rawCount}: ${String(e.data).slice(0, 120)}`);
+    try { handleEvent(JSON.parse(e.data)); } catch(err) {
+      if (rawCount <= 3) addLog('error', `PARSE ERR: ${err.message}`);
+    }
   };
 
-  ws.onerror = () => { addLog('error', 'WebSocket error'); };
+  ws.onerror = (e) => { addLog('error', 'WebSocket error — check console for details'); };
 
   ws.onclose = () => {
     setStatus('error');
@@ -578,10 +584,11 @@ function scheduleReconn() {
 // ═══════════════════════════════════════════════
 function handleEvent(ev) {
   const { txType, mint } = ev;
-  if (!mint) return;
 
   eventsRx++;
   document.getElementById('h-events').textContent = eventsRx;
+
+  if (!mint) return;
 
   if (txType === 'create') {
     handleCreate(ev);
