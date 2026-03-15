@@ -302,7 +302,7 @@
       </div>
       <div class="row2">
         <div class="field"><label>SLIPPAGE %</label>    <input type="number" id="s-slippage"      value="20"     min="1" max="100"      oninput="save('slippage',+this.value)"></div>
-        <div class="field"><label>PRIORITY FEE SOL</label><input type="number" id="s-priorityFee" value="0.0001" step="0.00001" min="0" oninput="save('priorityFee',+this.value)"></div>
+        <div class="field"><label>PRIORITY FEE (SOL or auto)</label><input type="text" id="s-priorityFee" value="0.0001" placeholder="0.0001 / auto / auto-75" oninput="save('priorityFee',parseFee(this.value))"></div>
       </div>
       <div class="field"><label>COOLDOWN BETWEEN BUYS (SEC)</label><input type="number" id="s-cooldown" value="10" min="0" oninput="save('cooldown',+this.value)"></div>
     </div>
@@ -432,11 +432,13 @@ function save(k, v) {
 }
 
 function applyToUI() {
-  ['privateKey','solAmount','maxPositions','slippage','priorityFee','cooldown',
+  ['privateKey','solAmount','maxPositions','slippage','cooldown',
    'minMcap','maxMcap','minSolInPool','tpPct','slPct','trailPct','timerMin'].forEach(k => {
     const el = document.getElementById('s-'+k);
     if (el) el.value = cfg[k];
   });
+  const feeEl = document.getElementById('s-priorityFee');
+  if (feeEl) feeEl.value = cfg.priorityFee;
   ['scamFilter','tpEnabled','slEnabled','trailEnabled','timerEnabled'].forEach(k => {
     const el = document.getElementById('s-'+k);
     if (el) el.checked = cfg[k];
@@ -679,16 +681,14 @@ async function executeBuy(ev) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        actions: [{
-          privateKey:        cfg.privateKey,
-          action:            'buy',
-          mint,
-          amount:            cfg.solAmount,
-          denominatedInQuote: true,
-          slippage:          cfg.slippage,
-          priorityFee:       cfg.priorityFee,
-          pool:              pool || undefined,
-        }]
+        privateKey:         cfg.privateKey,
+        action:             'buy',
+        mint,
+        amount:             cfg.solAmount,
+        denominatedInQuote: 'true',
+        slippage:           cfg.slippage,
+        priorityFee:        cfg.priorityFee,
+        pool:               pool || undefined,
       })
     });
 
@@ -781,15 +781,13 @@ async function executeSell(mint, reason, attempt = 1) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        actions: [{
-          privateKey:         cfg.privateKey,
-          action:             'sell',
-          mint,
-          amount:             '100%',
-          denominatedInQuote: true,
-          slippage:           cfg.slippage,
-          priorityFee:        cfg.priorityFee,
-        }]
+        privateKey:         cfg.privateKey,
+        action:             'sell',
+        mint,
+        amount:             '100%',
+        denominatedInQuote: 'true',
+        slippage:           cfg.slippage,
+        priorityFee:        cfg.priorityFee,
       })
     });
 
@@ -1104,6 +1102,14 @@ function escHtml(s) {
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// Parse priority fee — accepts number string or 'auto', 'auto-75', 'auto-95', 'auto-50'
+function parseFee(v) {
+  const s = String(v).trim();
+  if (s.startsWith('auto')) return s;
+  const n = parseFloat(s);
+  return isNaN(n) ? 0.0001 : n;
+}
 
 // ═══════════════════════════════════════════════
 //  INIT
