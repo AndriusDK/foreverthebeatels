@@ -1,0 +1,12 @@
+{
+  "name": "drcameltoe",
+  "version": "1.0.0",
+  "description": "pump.fun sniper bot",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

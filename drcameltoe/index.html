@@ -401,7 +401,7 @@ const DANGEROUS_EXT = new Set([
 ]);
 
 const API_URL = 'https://api.pumpapi.io';
-const WS_URL  = 'wss://stream.pumpapi.io/';
+const WS_URL  = 'ws://localhost:3001';   // local proxy (run: node server.js)
 
 // ═══════════════════════════════════════════════
 //  SETTINGS
@@ -546,17 +546,19 @@ function connectWS() {
 
   ws.onopen = () => {
     reconnDelay = 2000;
-    setStatus('live');
-    addLog('sys', 'Stream connected');
+    setStatus('connecting');   // still waiting for upstream _proxy:connected
+    addLog('sys', 'Proxy connected — waiting for upstream stream...');
   };
 
-  let rawCount = 0;
   ws.onmessage = (e) => {
-    rawCount++;
-    // Log first 3 raw messages so we can see the server response format
-    if (rawCount <= 3) addLog('sys', `RAW MSG #${rawCount}: ${String(e.data).slice(0, 120)}`);
-    try { handleEvent(JSON.parse(e.data)); } catch(err) {
-      if (rawCount <= 3) addLog('error', `PARSE ERR: ${err.message}`);
+    try {
+      const ev = JSON.parse(e.data);
+      // Proxy status messages
+      if (ev._proxy === 'connected')    { setStatus('live');  addLog('sys', 'Upstream stream connected'); return; }
+      if (ev._proxy === 'disconnected') { setStatus('error'); addLog('error', 'Upstream stream dropped — proxy reconnecting...'); return; }
+      handleEvent(ev);
+    } catch(err) {
+      addLog('error', `MSG parse error: ${err.message}`);
     }
   };
 
