@@ -370,9 +370,9 @@
     <div class="panel-title">SESSION GRAPH</div>
     <div id="graph-wrap"><canvas id="graph-canvas"></canvas></div>
     <div id="graph-stats">
-      <div class="gs-row"><span class="lbl">BEST TRADE</span>  <span id="gs-best"     class="pos">--</span></div>
-      <div class="gs-row"><span class="lbl">WORST TRADE</span> <span id="gs-worst"    class="neg">--</span></div>
-      <div class="gs-row"><span class="lbl">AVG PNL</span>     <span id="gs-avg"      class="neu">--</span></div>
+      <div class="gs-row"><span class="lbl">BEST TRADE (est.)</span>  <span id="gs-best"     class="pos">--</span></div>
+      <div class="gs-row"><span class="lbl">WORST TRADE (est.)</span> <span id="gs-worst"    class="neg">--</span></div>
+      <div class="gs-row"><span class="lbl">AVG PNL (est.)</span>     <span id="gs-avg"      class="neu">--</span></div>
       <div class="gs-row"><span class="lbl">SOL SPENT</span>   <span id="gs-spent"    class="neu">0.0000</span></div>
       <div class="gs-row"><span class="lbl">SOL RETURNED</span><span id="gs-returned" class="neu">0.0000</span></div>
     </div>
@@ -717,9 +717,10 @@ async function executeBuy(ev) {
       name:         name || symbol || mint.slice(0,8),
       symbol:       symbol || '?',
       pool:         pool  || '?',
-      entryPrice:   price || 0,
-      currentPrice: price || 0,
-      peakPrice:    price || 0,
+      entryPrice:   0,        // set from first real trade event after buy confirms
+      currentPrice: 0,
+      peakPrice:    0,
+      activeAfter:  Date.now() + 5000,  // no exit checks for 5s after buy
       solSpent:     cfg.solAmount,
       openedAt:     Date.now(),
       selling:      false,
@@ -753,8 +754,19 @@ function handlePriceUpdate(ev) {
   if (!pos || pos.selling) return;
 
   const prev        = pos.currentPrice;
+
+  // First trade event after buy — use as real entry price
+  if (pos.entryPrice === 0) {
+    pos.entryPrice  = price;
+    pos.peakPrice   = price;
+    addLog('info' in console ? 'sys' : 'sys', `${pos.name} entry price set: ${fmtPrice(price)}`);
+  }
+
   pos.currentPrice  = price;
   if (price > pos.peakPrice) pos.peakPrice = price;
+
+  // Don't check exits until activeAfter delay has passed
+  if (Date.now() < pos.activeAfter) { updateCardPrice(mint, price, prev); return; }
 
   if (pos.entryPrice > 0) {
     const pctEntry = (price - pos.entryPrice) / pos.entryPrice * 100;
@@ -1094,7 +1106,7 @@ function fmtPrice(p) {
 }
 
 function fmtPnl(p) {
-  return (p >= 0 ? '+' : '') + p.toFixed(4) + ' SOL';
+  return (p >= 0 ? '+' : '') + p.toFixed(4) + ' SOL (est.)';
 }
 
 function msToTime(ms) {
