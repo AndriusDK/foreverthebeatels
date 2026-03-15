@@ -271,6 +271,10 @@
     <div class="hstat-label">POSITIONS</div>
     <div class="hstat-val neu" id="h-pos">0 / 5</div>
   </div>
+  <div class="hstat">
+    <div class="hstat-label">EVENTS RX</div>
+    <div class="hstat-val neu" id="h-events">0</div>
+  </div>
 </div>
 
 <!-- MAIN -->
@@ -479,6 +483,7 @@ let botRunning   = false;
 let lastBuyTime  = 0;
 let reconnDelay  = 2000;
 let reconnTimer  = null;
+let eventsRx     = 0;
 
 function newSession() {
   return { startedAt:null, pnl:0, wins:0, losses:0, trades:0, solSpent:0, solReturned:0, history:[{t:0,pnl:0}] };
@@ -496,6 +501,7 @@ function startBot() {
   if (cfg.pools.length === 0) { addLog('error','No pools selected');   return; }
 
   botRunning = true;
+  eventsRx   = 0;
   session    = newSession();
   session.startedAt = Date.now();
   positions.clear();
@@ -572,6 +578,9 @@ function handleEvent(ev) {
   const { txType, mint } = ev;
   if (!mint) return;
 
+  eventsRx++;
+  document.getElementById('h-events').textContent = eventsRx;
+
   if (txType === 'create') {
     handleCreate(ev);
     return;
@@ -597,7 +606,10 @@ function handleCreate(ev) {
   const tag = (symbol || (name||'').slice(0,8) || mint.slice(0,8)).toUpperCase();
 
   // Pool filter
-  if (!cfg.pools.includes(pool)) return;
+  if (!cfg.pools.includes(pool)) {
+    addLog('skip', `SKIP ${tag} [${pool}] — pool not in filter`);
+    return;
+  }
 
   // Already tracking
   if (positions.has(mint)) return;
