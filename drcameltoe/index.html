@@ -1,0 +1,1104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>DRCAMELTOE</title>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:      #050508;
+      --bg2:     #0a0a10;
+      --bg3:     #0f0f18;
+      --cyan:    #00ffe5;
+      --magenta: #ff2d78;
+      --amber:   #ffb800;
+      --green:   #00ff88;
+      --red:     #ff3366;
+      --grey:    #3a3a55;
+      --text:    #b0b0c8;
+      --glow-c:  0 0 8px #00ffe5, 0 0 20px rgba(0,255,229,.25);
+      --glow-m:  0 0 8px #ff2d78, 0 0 20px rgba(255,45,120,.25);
+      --glow-g:  0 0 8px #00ff88, 0 0 20px rgba(0,255,136,.25);
+      --glow-r:  0 0 8px #ff3366, 0 0 20px rgba(255,51,102,.25);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Share Tech Mono', 'Courier New', monospace;
+      font-size: 12px;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* scanlines */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,.07) 2px, rgba(0,0,0,.07) 4px);
+      pointer-events: none;
+      z-index: 9000;
+    }
+
+    /* ── HEADER ── */
+    #header {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      padding: 7px 14px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--grey);
+      flex-shrink: 0;
+      z-index: 100;
+    }
+    #app-title {
+      font-size: 20px;
+      letter-spacing: 5px;
+      color: var(--cyan);
+      text-shadow: var(--glow-c);
+    }
+    #status-wrap { display: flex; align-items: center; gap: 6px; }
+    #status-dot {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: var(--grey); flex-shrink: 0;
+    }
+    #status-dot.connecting { background: var(--amber); animation: blink 1s infinite; }
+    #status-dot.live       { background: var(--cyan);  box-shadow: var(--glow-c); }
+    #status-dot.error      { background: var(--red);   box-shadow: var(--glow-r); }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.15} }
+    #status-text { font-size: 9px; letter-spacing: 2px; color: var(--grey); }
+
+    .spacer { flex: 1; }
+
+    .hstat { display: flex; flex-direction: column; align-items: center; min-width: 80px; }
+    .hstat-label { font-size: 8px; letter-spacing: 1px; color: var(--grey); }
+    .hstat-val   { font-size: 13px; font-weight: bold; }
+    .pos { color: var(--green); text-shadow: var(--glow-g); }
+    .neg { color: var(--red);   text-shadow: var(--glow-r); }
+    .neu { color: var(--cyan); }
+
+    /* ── MAIN ── */
+    #main { display: flex; flex: 1; overflow: hidden; }
+
+    /* ── SETTINGS ── */
+    #settings-panel {
+      width: 255px; min-width: 255px;
+      background: var(--bg2);
+      border-right: 1px solid var(--grey);
+      overflow-y: auto;
+      display: flex; flex-direction: column;
+    }
+    .sec-head {
+      padding: 7px 11px;
+      font-size: 9px; letter-spacing: 2px;
+      color: var(--cyan);
+      display: flex; justify-content: space-between; align-items: center;
+      cursor: pointer; user-select: none;
+      border-bottom: 1px solid var(--grey);
+    }
+    .sec-head:hover { background: rgba(0,255,229,.04); }
+    .sec-body { padding: 8px 11px; display: flex; flex-direction: column; gap: 7px; border-bottom: 1px solid var(--grey); }
+    .sec-body.closed { display: none; }
+
+    .field { display: flex; flex-direction: column; gap: 3px; }
+    .field label { font-size: 8px; letter-spacing: 1px; color: var(--grey); }
+    .field input {
+      background: var(--bg3); border: 1px solid var(--grey);
+      color: var(--text); font-family: inherit; font-size: 11px;
+      padding: 4px 7px; outline: none; width: 100%;
+    }
+    .field input:focus { border-color: var(--cyan); }
+
+    .row2 { display: flex; gap: 7px; }
+    .row2 .field { flex: 1; }
+
+    /* toggle */
+    .tog-wrap { display: flex; justify-content: space-between; align-items: center; }
+    .tog-wrap > label:first-child { font-size: 8px; letter-spacing: 1px; color: var(--grey); }
+    .tog { position: relative; width: 34px; height: 16px; flex-shrink: 0; }
+    .tog input { opacity: 0; width: 0; height: 0; }
+    .tog-sl { position: absolute; inset: 0; background: var(--grey); cursor: pointer; transition: .25s; }
+    .tog-sl::before { content: ''; position: absolute; width: 10px; height: 10px; left: 3px; top: 3px; background: var(--bg); transition: .25s; }
+    .tog input:checked + .tog-sl { background: var(--cyan); box-shadow: var(--glow-c); }
+    .tog input:checked + .tog-sl::before { transform: translateX(18px); }
+
+    /* pool chips */
+    .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    .chip {
+      padding: 2px 6px; border: 1px solid var(--grey);
+      font-size: 9px; cursor: pointer; user-select: none; transition: all .18s;
+    }
+    .chip.on { border-color: var(--cyan); color: var(--cyan); background: rgba(0,255,229,.08); }
+
+    /* key field */
+    .key-wrap { position: relative; }
+    .key-wrap input { padding-right: 24px; }
+    .eye { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--grey); cursor: pointer; font-size: 11px; padding: 0; }
+    .eye:hover { color: var(--cyan); }
+
+    /* start btn */
+    #start-btn {
+      margin: 10px 11px 12px;
+      padding: 10px; font-family: inherit; font-size: 13px;
+      letter-spacing: 3px; background: transparent;
+      border: 2px solid var(--cyan); color: var(--cyan);
+      text-shadow: var(--glow-c); box-shadow: var(--glow-c);
+      cursor: pointer; transition: all .2s;
+    }
+    #start-btn:hover { background: rgba(0,255,229,.1); }
+    #start-btn.running { border-color: var(--red); color: var(--red); text-shadow: var(--glow-r); box-shadow: var(--glow-r); }
+    #start-btn.running:hover { background: rgba(255,51,102,.1); }
+
+    /* ── CENTER ── */
+    #center-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    .panel-title {
+      padding: 7px 11px; font-size: 9px; letter-spacing: 2px;
+      color: var(--cyan); border-bottom: 1px solid var(--grey); flex-shrink: 0;
+    }
+
+    #positions-grid {
+      display: flex; flex-wrap: wrap;
+      gap: 9px; padding: 9px;
+      overflow-y: auto; flex: 1; align-content: flex-start;
+    }
+    #empty-msg { color: var(--grey); font-size: 11px; padding: 24px; text-align: center; width: 100%; }
+
+    /* token card */
+    .card {
+      width: 218px; background: var(--bg2);
+      border: 1px solid var(--grey); padding: 9px;
+      animation: cardIn .28s ease; transition: border-color .4s, box-shadow .4s;
+    }
+    @keyframes cardIn { from{opacity:0;transform:scale(.9) translateY(-8px)} to{opacity:1;transform:scale(1) translateY(0)} }
+    .card.profit { border-color: var(--green); box-shadow: 0 0 7px rgba(0,255,136,.25); }
+    .card.loss   { border-color: var(--red);   box-shadow: 0 0 7px rgba(255,51,102,.25); }
+
+    .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+    .card-name { font-size: 13px; color: var(--cyan); }
+    .card-pool { font-size: 8px; color: var(--grey); }
+    .card-timer { font-size: 9px; color: var(--amber); }
+    .sell-btn {
+      background: none; border: 1px solid var(--grey); color: var(--grey);
+      font-family: inherit; font-size: 9px; padding: 2px 5px; cursor: pointer; margin-top: 2px;
+    }
+    .sell-btn:hover { border-color: var(--red); color: var(--red); }
+    .card-mint { font-size: 8px; color: var(--grey); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 5px; }
+    .card-hr { border: none; border-top: 1px solid var(--grey); margin: 5px 0; opacity: .35; }
+    .card-row { display: flex; justify-content: space-between; margin-bottom: 2px; font-size: 10px; }
+    .card-row .lbl { color: var(--grey); }
+    .card-pnl { text-align: center; font-size: 15px; font-weight: bold; margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--grey); }
+
+    /* closed trades */
+    #closed-title { padding: 5px 11px; font-size: 9px; letter-spacing: 2px; color: var(--grey); border-top: 1px solid var(--grey); flex-shrink: 0; }
+    #closed-list { max-height: 110px; overflow-y: auto; padding: 3px 11px; flex-shrink: 0; }
+    .ct-row { display: flex; gap: 10px; font-size: 10px; padding: 2px 0; border-bottom: 1px solid rgba(58,58,85,.4); animation: fadeIn .25s; }
+    @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+    .ct-name   { width: 76px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ct-reason { width: 46px; color: var(--grey); }
+    .ct-pnl    { font-weight: bold; }
+    .ct-time   { margin-left: auto; color: var(--grey); }
+
+    /* ── GRAPH ── */
+    #graph-panel {
+      width: 270px; min-width: 270px;
+      background: var(--bg2); border-left: 1px solid var(--grey);
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    #graph-wrap { flex: 1; padding: 9px; min-height: 0; }
+    #graph-canvas { width: 100%; height: 100%; display: block; }
+    #graph-stats { padding: 7px 11px; border-top: 1px solid var(--grey); flex-shrink: 0; }
+    .gs-row { display: flex; justify-content: space-between; font-size: 10px; padding: 2px 0; }
+    .gs-row .lbl { color: var(--grey); }
+
+    /* ── LOG ── */
+    #log-panel {
+      height: 96px; min-height: 96px;
+      background: var(--bg2); border-top: 1px solid var(--grey);
+      display: flex; flex-direction: column; flex-shrink: 0;
+    }
+    #log-title { padding: 3px 11px; font-size: 8px; letter-spacing: 2px; color: var(--grey); border-bottom: 1px solid var(--grey); flex-shrink: 0; }
+    #log-feed  { overflow-y: auto; flex: 1; padding: 3px 11px; display: flex; flex-direction: column-reverse; }
+    .log-line  { font-size: 10px; padding: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .log-t     { color: var(--grey); }
+    .log-info  { color: var(--text); }
+    .log-buy   { color: var(--cyan); }
+    .log-sell  { color: var(--green); }
+    .log-loss  { color: var(--red); }
+    .log-skip  { color: var(--amber); }
+    .log-error { color: var(--magenta); }
+    .log-sys   { color: var(--grey); font-style: italic; }
+
+    /* scrollbars */
+    ::-webkit-scrollbar { width: 3px; height: 3px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--grey); }
+    ::-webkit-scrollbar-thumb:hover { background: var(--cyan); }
+
+    /* price flash */
+    @keyframes flash-up   { 0%,100%{} 40%{color:var(--green);text-shadow:var(--glow-g)} }
+    @keyframes flash-down { 0%,100%{} 40%{color:var(--red);  text-shadow:var(--glow-r)} }
+    .fu { animation: flash-up   .4s; }
+    .fd { animation: flash-down .4s; }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div id="header">
+  <div id="app-title">DRCAMELTOE</div>
+  <div id="status-wrap">
+    <div id="status-dot"></div>
+    <span id="status-text">OFFLINE</span>
+  </div>
+  <div class="spacer"></div>
+  <div class="hstat">
+    <div class="hstat-label">SESSION PNL</div>
+    <div class="hstat-val neu" id="h-pnl">+0.0000 SOL</div>
+  </div>
+  <div class="hstat">
+    <div class="hstat-label">WIN / LOSS</div>
+    <div class="hstat-val neu" id="h-wl">0 / 0</div>
+  </div>
+  <div class="hstat">
+    <div class="hstat-label">TRADES</div>
+    <div class="hstat-val neu" id="h-trades">0</div>
+  </div>
+  <div class="hstat">
+    <div class="hstat-label">POSITIONS</div>
+    <div class="hstat-val neu" id="h-pos">0 / 5</div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+
+  <!-- SETTINGS -->
+  <div id="settings-panel">
+
+    <div class="sec-head" onclick="toggleSec(this)">WALLET <span>▾</span></div>
+    <div class="sec-body">
+      <div class="field">
+        <label>PRIVATE KEY (BASE58)</label>
+        <div class="key-wrap">
+          <input type="password" id="s-privateKey" placeholder="enter private key..." oninput="save('privateKey',this.value)">
+          <button class="eye" onclick="toggleKey()">👁</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec-head" onclick="toggleSec(this)">TRADING <span>▾</span></div>
+    <div class="sec-body">
+      <div class="row2">
+        <div class="field"><label>SOL PER TRADE</label><input type="number" id="s-solAmount"     value="0.01"   step="0.001" min="0.001" oninput="save('solAmount',+this.value)"></div>
+        <div class="field"><label>MAX POSITIONS</label><input type="number" id="s-maxPositions"  value="5"      min="1" max="20"       oninput="save('maxPositions',+this.value)"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>SLIPPAGE %</label>    <input type="number" id="s-slippage"      value="20"     min="1" max="100"      oninput="save('slippage',+this.value)"></div>
+        <div class="field"><label>PRIORITY FEE SOL</label><input type="number" id="s-priorityFee" value="0.0001" step="0.00001" min="0" oninput="save('priorityFee',+this.value)"></div>
+      </div>
+      <div class="field"><label>COOLDOWN BETWEEN BUYS (SEC)</label><input type="number" id="s-cooldown" value="10" min="0" oninput="save('cooldown',+this.value)"></div>
+    </div>
+
+    <div class="sec-head" onclick="toggleSec(this)">POOL FILTER <span>▾</span></div>
+    <div class="sec-body">
+      <div class="chips" id="pool-chips"></div>
+    </div>
+
+    <div class="sec-head" onclick="toggleSec(this)">ENTRY FILTERS <span>▾</span></div>
+    <div class="sec-body">
+      <div class="row2">
+        <div class="field"><label>MIN MCAP (SOL)</label><input type="number" id="s-minMcap" value="10"  min="0" oninput="save('minMcap',+this.value)"></div>
+        <div class="field"><label>MAX MCAP (SOL)</label><input type="number" id="s-maxMcap" value="500" min="0" oninput="save('maxMcap',+this.value)"></div>
+      </div>
+      <div class="field"><label>MIN SOL IN POOL</label><input type="number" id="s-minSolInPool" value="5" min="0" oninput="save('minSolInPool',+this.value)"></div>
+      <div class="tog-wrap">
+        <label>SCAM FILTER</label>
+        <label class="tog"><input type="checkbox" id="s-scamFilter" checked onchange="save('scamFilter',this.checked)"><span class="tog-sl"></span></label>
+      </div>
+    </div>
+
+    <div class="sec-head" onclick="toggleSec(this)">EXIT CONDITIONS <span>▾</span></div>
+    <div class="sec-body">
+      <div class="tog-wrap">
+        <label>TAKE PROFIT %</label>
+        <label class="tog"><input type="checkbox" id="s-tpEnabled" checked onchange="save('tpEnabled',this.checked)"><span class="tog-sl"></span></label>
+      </div>
+      <div class="field"><input type="number" id="s-tpPct" value="50" min="1" oninput="save('tpPct',+this.value)"></div>
+
+      <div class="tog-wrap">
+        <label>STOP LOSS % FROM ENTRY</label>
+        <label class="tog"><input type="checkbox" id="s-slEnabled" checked onchange="save('slEnabled',this.checked)"><span class="tog-sl"></span></label>
+      </div>
+      <div class="field"><input type="number" id="s-slPct" value="30" min="1" oninput="save('slPct',+this.value)"></div>
+
+      <div class="tog-wrap">
+        <label>TRAILING STOP % FROM PEAK</label>
+        <label class="tog"><input type="checkbox" id="s-trailEnabled" checked onchange="save('trailEnabled',this.checked)"><span class="tog-sl"></span></label>
+      </div>
+      <div class="field"><input type="number" id="s-trailPct" value="20" min="1" oninput="save('trailPct',+this.value)"></div>
+
+      <div class="tog-wrap">
+        <label>MAX TRADE DURATION (MIN)</label>
+        <label class="tog"><input type="checkbox" id="s-timerEnabled" checked onchange="save('timerEnabled',this.checked)"><span class="tog-sl"></span></label>
+      </div>
+      <div class="field"><input type="number" id="s-timerMin" value="10" min="1" oninput="save('timerMin',+this.value)"></div>
+    </div>
+
+    <button id="start-btn" onclick="toggleBot()">▶ START BOT</button>
+  </div>
+
+  <!-- CENTER -->
+  <div id="center-panel">
+    <div class="panel-title">ACTIVE POSITIONS</div>
+    <div id="positions-grid">
+      <div id="empty-msg">No active positions. Start the bot to begin trading.</div>
+    </div>
+    <div id="closed-title">CLOSED TRADES</div>
+    <div id="closed-list"></div>
+  </div>
+
+  <!-- GRAPH -->
+  <div id="graph-panel">
+    <div class="panel-title">SESSION GRAPH</div>
+    <div id="graph-wrap"><canvas id="graph-canvas"></canvas></div>
+    <div id="graph-stats">
+      <div class="gs-row"><span class="lbl">BEST TRADE</span>  <span id="gs-best"     class="pos">--</span></div>
+      <div class="gs-row"><span class="lbl">WORST TRADE</span> <span id="gs-worst"    class="neg">--</span></div>
+      <div class="gs-row"><span class="lbl">AVG PNL</span>     <span id="gs-avg"      class="neu">--</span></div>
+      <div class="gs-row"><span class="lbl">SOL SPENT</span>   <span id="gs-spent"    class="neu">0.0000</span></div>
+      <div class="gs-row"><span class="lbl">SOL RETURNED</span><span id="gs-returned" class="neu">0.0000</span></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- LOG -->
+<div id="log-panel">
+  <div id="log-title">EVENT LOG</div>
+  <div id="log-feed"></div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+//  CONSTANTS
+// ═══════════════════════════════════════════════
+const POOLS = ['pump','pump-amm','raydium-launchpad','raydium-cpmm','meteora-launchpad','meteora-damm-v1','meteora-damm-v2','pumpswap'];
+
+const DANGEROUS_EXT = new Set([
+  'transferFeeConfig','transferHook','permanentDelegate',
+  'defaultAccountState','nonTransferableTokens',
+  'confidentialTransferMint','confidentialMintBurn',
+  'confidentialTransferFeeConfig','pausableConfig',
+  'cpiGuard','memoTransfer'
+]);
+
+const API_URL = 'https://api.pumpapi.io';
+const WS_URL  = 'wss://stream.pumpapi.io/';
+
+// ═══════════════════════════════════════════════
+//  SETTINGS
+// ═══════════════════════════════════════════════
+const DEFAULTS = {
+  privateKey:'', solAmount:0.01, maxPositions:5,
+  slippage:20, priorityFee:0.0001, cooldown:10,
+  pools:['pump'],
+  minMcap:10, maxMcap:500, minSolInPool:5, scamFilter:true,
+  tpEnabled:true, tpPct:50,
+  slEnabled:true, slPct:30,
+  trailEnabled:true, trailPct:20,
+  timerEnabled:true, timerMin:10,
+};
+
+let cfg = { ...DEFAULTS };
+
+function loadCfg() {
+  try { cfg = { ...DEFAULTS, ...JSON.parse(localStorage.getItem('drc_cfg') || '{}') }; }
+  catch(e) { cfg = { ...DEFAULTS }; }
+  applyToUI();
+}
+
+function save(k, v) {
+  cfg[k] = v;
+  localStorage.setItem('drc_cfg', JSON.stringify(cfg));
+  if (k === 'maxPositions') updateHeader();
+}
+
+function applyToUI() {
+  ['privateKey','solAmount','maxPositions','slippage','priorityFee','cooldown',
+   'minMcap','maxMcap','minSolInPool','tpPct','slPct','trailPct','timerMin'].forEach(k => {
+    const el = document.getElementById('s-'+k);
+    if (el) el.value = cfg[k];
+  });
+  ['scamFilter','tpEnabled','slEnabled','trailEnabled','timerEnabled'].forEach(k => {
+    const el = document.getElementById('s-'+k);
+    if (el) el.checked = cfg[k];
+  });
+  buildPoolChips();
+}
+
+function buildPoolChips() {
+  const wrap = document.getElementById('pool-chips');
+  wrap.innerHTML = '';
+  POOLS.forEach(p => {
+    const d = document.createElement('div');
+    d.className = 'chip' + (cfg.pools.includes(p) ? ' on' : '');
+    d.textContent = p;
+    d.onclick = () => {
+      cfg.pools = cfg.pools.includes(p) ? cfg.pools.filter(x=>x!==p) : [...cfg.pools,p];
+      save('pools', cfg.pools);
+      d.classList.toggle('on');
+    };
+    wrap.appendChild(d);
+  });
+}
+
+function toggleSec(hdr) {
+  const body = hdr.nextElementSibling;
+  const arr  = hdr.querySelector('span');
+  body.classList.toggle('closed');
+  arr.textContent = body.classList.contains('closed') ? '▸' : '▾';
+}
+
+function toggleKey() {
+  const inp = document.getElementById('s-privateKey');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
+// ═══════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════
+let positions    = new Map();   // mint → pos
+let closedTrades = [];
+let session = newSession();
+let ws = null;
+let botRunning   = false;
+let lastBuyTime  = 0;
+let reconnDelay  = 2000;
+let reconnTimer  = null;
+
+function newSession() {
+  return { startedAt:null, pnl:0, wins:0, losses:0, trades:0, solSpent:0, solReturned:0, history:[{t:0,pnl:0}] };
+}
+
+// ═══════════════════════════════════════════════
+//  BOT CONTROL
+// ═══════════════════════════════════════════════
+function toggleBot() {
+  botRunning ? stopBot() : startBot();
+}
+
+function startBot() {
+  if (!cfg.privateKey.trim()) { addLog('error','Private key not set'); return; }
+  if (cfg.pools.length === 0) { addLog('error','No pools selected');   return; }
+
+  botRunning = true;
+  session    = newSession();
+  session.startedAt = Date.now();
+  positions.clear();
+  closedTrades = [];
+
+  document.getElementById('positions-grid').innerHTML = '<div id="empty-msg">Waiting for new tokens...</div>';
+  document.getElementById('closed-list').innerHTML    = '';
+  document.getElementById('start-btn').textContent    = '■ STOP BOT';
+  document.getElementById('start-btn').classList.add('running');
+
+  connectWS();
+  updateHeader();
+  drawGraph();
+  addLog('sys', 'Bot started — pools: ' + cfg.pools.join(', '));
+}
+
+function stopBot() {
+  botRunning = false;
+  if (ws)          { ws.close(); ws = null; }
+  if (reconnTimer) { clearTimeout(reconnTimer); reconnTimer = null; }
+  document.getElementById('start-btn').textContent = '▶ START BOT';
+  document.getElementById('start-btn').classList.remove('running');
+  setStatus('offline');
+  addLog('sys', 'Bot stopped');
+}
+
+// ═══════════════════════════════════════════════
+//  WEBSOCKET
+// ═══════════════════════════════════════════════
+function connectWS() {
+  setStatus('connecting');
+  addLog('sys', 'Connecting to ' + WS_URL);
+  try {
+    ws = new WebSocket(WS_URL);
+  } catch(e) {
+    addLog('error', 'WebSocket init error: ' + e.message);
+    scheduleReconn();
+    return;
+  }
+
+  ws.onopen = () => {
+    reconnDelay = 2000;
+    setStatus('live');
+    addLog('sys', 'Stream connected');
+  };
+
+  ws.onmessage = (e) => {
+    try { handleEvent(JSON.parse(e.data)); } catch(_) {}
+  };
+
+  ws.onerror = () => { addLog('error', 'WebSocket error'); };
+
+  ws.onclose = () => {
+    setStatus('error');
+    if (botRunning) {
+      addLog('error', 'Stream dropped — reconnecting in ' + (reconnDelay/1000) + 's');
+      scheduleReconn();
+    }
+  };
+}
+
+function scheduleReconn() {
+  if (!botRunning) return;
+  reconnTimer = setTimeout(() => {
+    reconnDelay = Math.min(reconnDelay * 2, 16000);
+    connectWS();
+  }, reconnDelay);
+}
+
+// ═══════════════════════════════════════════════
+//  EVENT HANDLER
+// ═══════════════════════════════════════════════
+function handleEvent(ev) {
+  const { txType, mint } = ev;
+  if (!mint) return;
+
+  if (txType === 'create') {
+    handleCreate(ev);
+    return;
+  }
+
+  if ((txType === 'buy' || txType === 'sell') && positions.has(mint)) {
+    handlePriceUpdate(ev);
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  NEW TOKEN — FILTER → BUY
+// ═══════════════════════════════════════════════
+function handleCreate(ev) {
+  if (!botRunning) return;
+
+  const {
+    mint, name, symbol, pool,
+    price, marketCapSol, solInPool,
+    mintAuthority, freezeAuthority, tokenExtensions
+  } = ev;
+
+  const tag = (symbol || (name||'').slice(0,8) || mint.slice(0,8)).toUpperCase();
+
+  // Pool filter
+  if (!cfg.pools.includes(pool)) return;
+
+  // Already tracking
+  if (positions.has(mint)) return;
+
+  // Max positions
+  if (positions.size >= cfg.maxPositions) {
+    addLog('skip', `SKIP ${tag} — max positions reached`);
+    return;
+  }
+
+  // Cooldown
+  if (Date.now() - lastBuyTime < cfg.cooldown * 1000) {
+    addLog('skip', `SKIP ${tag} — cooldown`);
+    return;
+  }
+
+  // Scam filter
+  if (cfg.scamFilter) {
+    if (mintAuthority != null) {
+      addLog('skip', `SKIP ${tag} — mintAuthority set`);
+      return;
+    }
+    if (freezeAuthority != null) {
+      addLog('skip', `SKIP ${tag} — freezeAuthority set`);
+      return;
+    }
+    if (tokenExtensions) {
+      const bad = Object.keys(tokenExtensions).filter(k => DANGEROUS_EXT.has(k));
+      if (bad.length) {
+        addLog('skip', `SKIP ${tag} — dangerous ext: ${bad.join(',')}`);
+        return;
+      }
+    }
+  }
+
+  // Market cap
+  if (marketCapSol != null) {
+    if (marketCapSol < cfg.minMcap) {
+      addLog('skip', `SKIP ${tag} — mcap ${marketCapSol.toFixed(1)} < min ${cfg.minMcap}`);
+      return;
+    }
+    if (marketCapSol > cfg.maxMcap) {
+      addLog('skip', `SKIP ${tag} — mcap ${marketCapSol.toFixed(1)} > max ${cfg.maxMcap}`);
+      return;
+    }
+  }
+
+  // Min SOL in pool
+  if (solInPool != null && solInPool < cfg.minSolInPool) {
+    addLog('skip', `SKIP ${tag} — pool ${solInPool.toFixed(2)} SOL < min ${cfg.minSolInPool}`);
+    return;
+  }
+
+  addLog('buy', `NEW TOKEN ${tag} [${pool}] mcap:${(marketCapSol||0).toFixed(1)} SOL → BUYING`);
+  executeBuy(ev);
+}
+
+// ═══════════════════════════════════════════════
+//  BUY
+// ═══════════════════════════════════════════════
+async function executeBuy(ev) {
+  const { mint, name, symbol, pool, price } = ev;
+  const tag = (symbol || (name||'').slice(0,8) || mint.slice(0,8)).toUpperCase();
+
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actions: [{
+          privateKey:        cfg.privateKey,
+          action:            'buy',
+          mint,
+          amount:            cfg.solAmount,
+          denominatedInQuote: true,
+          slippage:          cfg.slippage,
+          priorityFee:       cfg.priorityFee,
+          pool:              pool || undefined,
+        }]
+      })
+    });
+
+    if (!res.ok) {
+      const txt = await res.text().catch(()=>'');
+      addLog('error', `BUY FAILED ${tag} — HTTP ${res.status} ${txt.slice(0,60)}`);
+      return;
+    }
+
+    const data  = await res.json().catch(()=>({}));
+    const txSig = data?.signature || (Array.isArray(data) ? data[0]?.signature : null) || '?';
+
+    lastBuyTime = Date.now();
+
+    const pos = {
+      mint,
+      name:         name || symbol || mint.slice(0,8),
+      symbol:       symbol || '?',
+      pool:         pool  || '?',
+      entryPrice:   price || 0,
+      currentPrice: price || 0,
+      peakPrice:    price || 0,
+      solSpent:     cfg.solAmount,
+      openedAt:     Date.now(),
+      selling:      false,
+      timerHandle:  null,
+    };
+
+    positions.set(mint, pos);
+    session.solSpent += cfg.solAmount;
+
+    if (cfg.timerEnabled) {
+      pos.timerHandle = setTimeout(() => triggerSell(mint, 'TIMER'), cfg.timerMin * 60 * 1000);
+    }
+
+    addLog('buy', `BUY OK ${pos.name} tx:${String(txSig).slice(0,20)}...`);
+    renderPositions();
+    updateHeader();
+
+  } catch(e) {
+    addLog('error', `BUY ERROR ${tag} — ${e.message}`);
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  PRICE UPDATE + EXIT CHECKS
+// ═══════════════════════════════════════════════
+function handlePriceUpdate(ev) {
+  const { mint, price } = ev;
+  if (!price) return;
+
+  const pos = positions.get(mint);
+  if (!pos || pos.selling) return;
+
+  const prev        = pos.currentPrice;
+  pos.currentPrice  = price;
+  if (price > pos.peakPrice) pos.peakPrice = price;
+
+  if (pos.entryPrice > 0) {
+    const pctEntry = (price - pos.entryPrice) / pos.entryPrice * 100;
+    const pctPeak  = (price - pos.peakPrice)  / pos.peakPrice  * 100;
+
+    if (cfg.tpEnabled    && pctEntry >=  cfg.tpPct)    { triggerSell(mint, 'TP');    return; }
+    if (cfg.slEnabled    && pctEntry <= -cfg.slPct)    { triggerSell(mint, 'SL');    return; }
+    if (cfg.trailEnabled && pctPeak  <= -cfg.trailPct) { triggerSell(mint, 'TRAIL'); return; }
+  }
+
+  updateCardPrice(mint, price, prev);
+}
+
+// ═══════════════════════════════════════════════
+//  SELL
+// ═══════════════════════════════════════════════
+function triggerSell(mint, reason) {
+  const pos = positions.get(mint);
+  if (!pos || pos.selling) return;
+  pos.selling = true;
+  clearTimeout(pos.timerHandle);
+  addLog(reason === 'TP' || reason === 'TRAIL' ? 'sell' : 'loss',
+    `${pos.name} → ${reason} → SELLING`);
+  executeSell(mint, reason);
+}
+
+async function executeSell(mint, reason, attempt = 1) {
+  const pos = positions.get(mint);
+  if (!pos) return;
+
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actions: [{
+          privateKey:         cfg.privateKey,
+          action:             'sell',
+          mint,
+          amount:             '100%',
+          denominatedInQuote: true,
+          slippage:           cfg.slippage,
+          priorityFee:        cfg.priorityFee,
+        }]
+      })
+    });
+
+    if (!res.ok) {
+      if (attempt < 2) {
+        addLog('error', `SELL RETRY ${pos.name} — HTTP ${res.status}`);
+        await sleep(1500);
+        return executeSell(mint, reason, 2);
+      }
+      const txt = await res.text().catch(()=>'');
+      addLog('error', `SELL FAILED ${pos.name} — ${res.status} ${txt.slice(0,50)}`);
+      pos.selling = false;
+      return;
+    }
+
+    const data  = await res.json().catch(()=>({}));
+    const txSig = data?.signature || (Array.isArray(data) ? data[0]?.signature : null) || '?';
+
+    // Estimated PNL (price-based; real PNL comes from chain)
+    const pnl    = pos.entryPrice > 0 ? (pos.currentPrice / pos.entryPrice - 1) * pos.solSpent : 0;
+    const solOut = pos.solSpent + pnl;
+
+    session.solReturned += Math.max(solOut, 0);
+    session.pnl         += pnl;
+    session.trades++;
+    pnl >= 0 ? session.wins++ : session.losses++;
+    session.history.push({ t: Date.now() - session.startedAt, pnl: session.pnl });
+
+    const pnlStr  = fmtPnl(pnl);
+    const logType = pnl >= 0 ? 'sell' : 'loss';
+    addLog(logType, `SOLD ${pos.name} [${reason}] PNL:${pnlStr} tx:${String(txSig).slice(0,20)}...`);
+
+    closedTrades.unshift({ name:pos.name, reason, pnl, time: now() });
+    if (closedTrades.length > 20) closedTrades.pop();
+
+    positions.delete(mint);
+    renderPositions();
+    renderClosed();
+    updateHeader();
+    updateGraphStats();
+    drawGraph();
+
+  } catch(e) {
+    if (attempt < 2) {
+      addLog('error', `SELL RETRY ${pos.name} — ${e.message}`);
+      await sleep(1500);
+      return executeSell(mint, reason, 2);
+    }
+    addLog('error', `SELL ERROR ${pos.name} — ${e.message}`);
+    pos.selling = false;
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  RENDER — POSITIONS
+// ═══════════════════════════════════════════════
+function renderPositions() {
+  const grid = document.getElementById('positions-grid');
+  if (positions.size === 0) {
+    grid.innerHTML = '<div id="empty-msg">No active positions.</div>';
+    return;
+  }
+  grid.innerHTML = '';
+  positions.forEach((pos, mint) => grid.appendChild(buildCard(pos, mint)));
+}
+
+function buildCard(pos, mint) {
+  const pctNum  = pos.entryPrice > 0 ? (pos.currentPrice / pos.entryPrice - 1) * 100 : 0;
+  const pnlSol  = (pctNum / 100 * pos.solSpent);
+  const elapsed = msToTime(Date.now() - pos.openedAt);
+
+  const tpP    = pos.entryPrice * (1 + cfg.tpPct / 100);
+  const slP    = pos.entryPrice * (1 - cfg.slPct / 100);
+  const trailP = pos.peakPrice  * (1 - cfg.trailPct / 100);
+
+  const card = document.createElement('div');
+  card.className = 'card' + (pctNum > 0 ? ' profit' : pctNum < 0 ? ' loss' : '');
+  card.id = 'card-' + mint;
+
+  card.innerHTML = `
+    <div class="card-top">
+      <div>
+        <div class="card-name">${pos.name.slice(0,12).toUpperCase()}</div>
+        <div class="card-pool">[${pos.pool}]</div>
+      </div>
+      <div style="text-align:right">
+        <div class="card-timer" id="timer-${mint}">${elapsed}</div>
+        <button class="sell-btn" onclick="triggerSell('${mint}','MANUAL')">SELL</button>
+      </div>
+    </div>
+    <div class="card-mint">${mint.slice(0,22)}...${mint.slice(-6)}</div>
+    <hr class="card-hr">
+    <div class="card-row"><span class="lbl">ENTRY</span>   <span>${fmtPrice(pos.entryPrice)}</span></div>
+    <div class="card-row"><span class="lbl">CURRENT</span> <span id="cp-${mint}" class="${pctNum>=0?'pos':'neg'}">${fmtPrice(pos.currentPrice)}</span></div>
+    <div class="card-row"><span class="lbl">PEAK</span>    <span>${fmtPrice(pos.peakPrice)}</span></div>
+    <hr class="card-hr">
+    <div class="card-row"><span class="lbl">TP</span>    <span style="color:var(--green)">${cfg.tpEnabled    ? fmtPrice(tpP)    : 'OFF'}</span></div>
+    <div class="card-row"><span class="lbl">SL</span>    <span style="color:var(--red)">${cfg.slEnabled    ? fmtPrice(slP)    : 'OFF'}</span></div>
+    <div class="card-row"><span class="lbl">TRAIL</span> <span style="color:var(--amber)">${cfg.trailEnabled ? fmtPrice(trailP) : 'OFF'}</span></div>
+    <div class="card-pnl ${pctNum>=0?'pos':'neg'}" id="pnl-${mint}">
+      ${pctNum>=0?'+':''}${pctNum.toFixed(1)}% &nbsp; ${fmtPnl(pnlSol)}
+    </div>`;
+  return card;
+}
+
+function updateCardPrice(mint, price, prev) {
+  const pos  = positions.get(mint);
+  if (!pos)  return;
+  const cpEl  = document.getElementById('cp-'    + mint);
+  const pnlEl = document.getElementById('pnl-'   + mint);
+  const card  = document.getElementById('card-'  + mint);
+  if (!cpEl || !pnlEl) return;
+
+  const pctNum = pos.entryPrice > 0 ? (price / pos.entryPrice - 1) * 100 : 0;
+  const pnlSol = pctNum / 100 * pos.solSpent;
+
+  cpEl.textContent = fmtPrice(price);
+  cpEl.className   = pctNum >= 0 ? 'pos' : 'neg';
+
+  if (price > prev) { cpEl.classList.remove('fd'); void cpEl.offsetWidth; cpEl.classList.add('fu'); }
+  else if (price < prev) { cpEl.classList.remove('fu'); void cpEl.offsetWidth; cpEl.classList.add('fd'); }
+
+  pnlEl.textContent = `${pctNum>=0?'+':''}${pctNum.toFixed(1)}%   ${fmtPnl(pnlSol)}`;
+  pnlEl.className   = 'card-pnl ' + (pctNum >= 0 ? 'pos' : 'neg');
+  if (card) card.className = 'card' + (pctNum > 0 ? ' profit' : pctNum < 0 ? ' loss' : '');
+}
+
+// Tick timers every second
+setInterval(() => {
+  positions.forEach((pos, mint) => {
+    const el = document.getElementById('timer-' + mint);
+    if (el) el.textContent = msToTime(Date.now() - pos.openedAt);
+  });
+}, 1000);
+
+function renderClosed() {
+  const el = document.getElementById('closed-list');
+  el.innerHTML = '';
+  closedTrades.forEach(t => {
+    const row = document.createElement('div');
+    row.className = 'ct-row';
+    row.innerHTML = `
+      <span class="ct-name">${t.name}</span>
+      <span class="ct-reason">[${t.reason}]</span>
+      <span class="ct-pnl ${t.pnl>=0?'pos':'neg'}">${fmtPnl(t.pnl)}</span>
+      <span class="ct-time">${t.time}</span>`;
+    el.appendChild(row);
+  });
+}
+
+// ═══════════════════════════════════════════════
+//  RENDER — HEADER
+// ═══════════════════════════════════════════════
+function updateHeader() {
+  const pnl = session.pnl;
+  const el  = document.getElementById('h-pnl');
+  el.textContent = (pnl >= 0 ? '+' : '') + pnl.toFixed(4) + ' SOL';
+  el.className   = 'hstat-val ' + (pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : 'neu');
+  document.getElementById('h-wl').textContent     = `${session.wins} / ${session.losses}`;
+  document.getElementById('h-trades').textContent = session.trades;
+  document.getElementById('h-pos').textContent    = `${positions.size} / ${cfg.maxPositions}`;
+}
+
+function setStatus(state) {
+  const dot = document.getElementById('status-dot');
+  const txt = document.getElementById('status-text');
+  dot.className = '';
+  const map = {
+    offline:    ['',           'OFFLINE',    'var(--grey)'],
+    connecting: ['connecting', 'CONNECTING', 'var(--amber)'],
+    live:       ['live',       'LIVE',       'var(--cyan)'],
+    error:      ['error',      'ERROR',      'var(--red)'],
+  };
+  const [cls, label, color] = map[state] || ['','','var(--grey)'];
+  if (cls) dot.classList.add(cls);
+  txt.textContent    = label;
+  txt.style.color    = color;
+}
+
+// ═══════════════════════════════════════════════
+//  RENDER — GRAPH
+// ═══════════════════════════════════════════════
+function drawGraph() {
+  const canvas = document.getElementById('graph-canvas');
+  const wrap   = document.getElementById('graph-wrap');
+  canvas.width  = wrap.clientWidth  - 18;
+  canvas.height = wrap.clientHeight - 18;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  // grid
+  ctx.strokeStyle = 'rgba(58,58,85,.35)';
+  ctx.lineWidth   = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = (H / 4) * i;
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+    const x = (W / 4) * i;
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke();
+  }
+
+  const pts = session.history;
+  if (pts.length < 2) {
+    ctx.strokeStyle = 'rgba(58,58,85,.6)';
+    ctx.beginPath(); ctx.moveTo(0,H/2); ctx.lineTo(W,H/2); ctx.stroke();
+    return;
+  }
+
+  const minP = Math.min(...pts.map(p=>p.pnl), 0);
+  const maxP = Math.max(...pts.map(p=>p.pnl), 0);
+  const rng  = maxP - minP || 0.001;
+  const maxT = pts[pts.length-1].t || 1;
+  const toX  = t   => (t / maxT) * W;
+  const toY  = pnl => H - ((pnl - minP) / rng) * H * 0.82 - H * 0.09;
+
+  // zero line
+  ctx.strokeStyle = 'rgba(58,58,85,.7)';
+  ctx.beginPath(); ctx.moveTo(0, toY(0)); ctx.lineTo(W, toY(0)); ctx.stroke();
+
+  const last  = pts[pts.length-1].pnl;
+  const color = last >= 0 ? '#00ffe5' : '#ff2d78';
+
+  // gradient fill
+  const grad = ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,   last >= 0 ? 'rgba(0,255,229,.18)' : 'rgba(255,45,120,.18)');
+  grad.addColorStop(1,   'rgba(0,0,0,0)');
+
+  ctx.beginPath();
+  pts.forEach((p,i) => i===0 ? ctx.moveTo(toX(p.t),toY(p.pnl)) : ctx.lineTo(toX(p.t),toY(p.pnl)));
+  ctx.lineTo(toX(pts[pts.length-1].t), toY(0));
+  ctx.lineTo(toX(pts[0].t), toY(0));
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // line
+  ctx.beginPath();
+  pts.forEach((p,i) => i===0 ? ctx.moveTo(toX(p.t),toY(p.pnl)) : ctx.lineTo(toX(p.t),toY(p.pnl)));
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = 2;
+  ctx.shadowColor = color;
+  ctx.shadowBlur  = 8;
+  ctx.stroke();
+  ctx.shadowBlur  = 0;
+
+  // dots (skip first baseline)
+  pts.slice(1).forEach(p => {
+    ctx.beginPath();
+    ctx.arc(toX(p.t), toY(p.pnl), 3, 0, Math.PI*2);
+    ctx.fillStyle   = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur  = 6;
+    ctx.fill();
+    ctx.shadowBlur  = 0;
+  });
+}
+
+function updateGraphStats() {
+  if (!closedTrades.length) return;
+  const pnls  = closedTrades.map(t=>t.pnl);
+  const best  = Math.max(...pnls);
+  const worst = Math.min(...pnls);
+  const avg   = pnls.reduce((a,b)=>a+b,0) / pnls.length;
+  document.getElementById('gs-best').textContent     = '+' + best.toFixed(4) + ' SOL';
+  document.getElementById('gs-worst').textContent    = worst.toFixed(4) + ' SOL';
+  document.getElementById('gs-avg').textContent      = (avg>=0?'+':'') + avg.toFixed(4) + ' SOL';
+  document.getElementById('gs-spent').textContent    = session.solSpent.toFixed(4);
+  document.getElementById('gs-returned').textContent = session.solReturned.toFixed(4);
+}
+
+window.addEventListener('resize', drawGraph);
+
+// ═══════════════════════════════════════════════
+//  LOG
+// ═══════════════════════════════════════════════
+const logBuf = [];
+function addLog(type, msg) {
+  const feed  = document.getElementById('log-feed');
+  const entry = document.createElement('div');
+  entry.className = `log-line log-${type}`;
+  entry.innerHTML = `<span class="log-t">[${now()}]</span> ${escHtml(msg)}`;
+  feed.prepend(entry);
+  logBuf.push(entry);
+  if (logBuf.length > 100) logBuf.shift().remove();
+}
+
+// ═══════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════
+function fmtPrice(p) {
+  if (!p || p === 0) return '0.000';
+  if (p >= 0.01)     return p.toFixed(6);
+  if (p >= 0.000001) return p.toFixed(8);
+  return p.toExponential(4);
+}
+
+function fmtPnl(p) {
+  return (p >= 0 ? '+' : '') + p.toFixed(4) + ' SOL';
+}
+
+function msToTime(ms) {
+  const s = Math.floor(ms / 1000);
+  return String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0');
+}
+
+function now() {
+  return new Date().toLocaleTimeString('en-GB', { hour12: false });
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ═══════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════
+loadCfg();
+drawGraph();
+updateHeader();
+</script>
+</body>
+</html>
