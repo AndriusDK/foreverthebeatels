@@ -176,6 +176,11 @@
     @keyframes cardIn { from{opacity:0;transform:scale(.9) translateY(-8px)} to{opacity:1;transform:scale(1) translateY(0)} }
     .card.profit { border-color: var(--green); box-shadow: 0 0 7px rgba(0,255,136,.25); }
     .card.loss   { border-color: var(--red);   box-shadow: 0 0 7px rgba(255,51,102,.25); }
+    .card.closed { opacity: .55; border-color: var(--grey); box-shadow: none; }
+    .card.closed .card-name { color: var(--grey); }
+    .sold-badge { font-size: 9px; letter-spacing: 1px; padding: 1px 5px; border: 1px solid var(--grey); color: var(--grey); }
+    .dex-link { display: block; text-align: center; font-size: 9px; color: var(--cyan); text-decoration: none; margin-top: 5px; letter-spacing: 1px; border: 1px solid var(--grey); padding: 3px; }
+    .dex-link:hover { background: rgba(0,255,229,.08); border-color: var(--cyan); }
 
     .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
     .card-name { font-size: 13px; color: var(--cyan); }
@@ -292,6 +297,10 @@
           <button class="eye" onclick="toggleKey()">👁</button>
         </div>
       </div>
+      <div class="field">
+        <label>PUBLIC KEY (WALLET ADDRESS)</label>
+        <input type="text" id="s-publicKey" placeholder="for DexScreener links..." oninput="save('publicKey',this.value)">
+      </div>
     </div>
 
     <div class="sec-head" onclick="toggleSec(this)">TRADING <span>▾</span></div>
@@ -407,7 +416,7 @@ const WS_URL  = `ws://${window.location.hostname}:3001`;  // proxy on same serve
 //  SETTINGS
 // ═══════════════════════════════════════════════
 const DEFAULTS = {
-  privateKey:'', solAmount:0.01, maxPositions:5,
+  privateKey:'', publicKey:'', solAmount:0.01, maxPositions:5,
   slippage:20, priorityFee:0.0001, cooldown:10,
   pools:['pump'],
   minMcap:10, maxMcap:500, minSolInPool:5, scamFilter:true,
@@ -432,7 +441,7 @@ function save(k, v) {
 }
 
 function applyToUI() {
-  ['privateKey','solAmount','maxPositions','slippage','cooldown',
+  ['privateKey','publicKey','solAmount','maxPositions','slippage','cooldown',
    'minMcap','maxMcap','minSolInPool','tpPct','slPct','trailPct','timerMin'].forEach(k => {
     const el = document.getElementById('s-'+k);
     if (el) el.value = cfg[k];
@@ -477,8 +486,9 @@ function toggleKey() {
 // ═══════════════════════════════════════════════
 //  STATE
 // ═══════════════════════════════════════════════
-let positions    = new Map();   // mint → pos
-let closedTrades = [];
+let positions       = new Map();   // mint → open pos
+let closedPositions = new Map();   // mint → closed pos (kept for display)
+let closedTrades    = [];
 let session = newSession();
 let ws = null;
 let botRunning   = false;
@@ -507,6 +517,7 @@ function startBot() {
   session    = newSession();
   session.startedAt = Date.now();
   positions.clear();
+  closedPositions.clear();
   closedTrades = [];
 
   document.getElementById('positions-grid').innerHTML = '<div id="empty-msg">Waiting for new tokens...</div>';
@@ -682,7 +693,7 @@ function handleCreate(ev) {
 //  BUY
 // ═══════════════════════════════════════════════
 async function executeBuy(ev) {
-  const { mint, name, symbol, pool, price } = ev;
+  const { mint, name, symbol, pool, price, poolId } = ev;
   const tag = (symbol || (name||'').slice(0,8) || mint.slice(0,8)).toUpperCase();
 
   try {
@@ -717,6 +728,7 @@ async function executeBuy(ev) {
       name:         name || symbol || mint.slice(0,8),
       symbol:       symbol || '?',
       pool:         pool  || '?',
+      poolId:       poolId || mint,
       entryPrice:   0,        // set from first real trade event after buy confirms
       currentPrice: 0,
       peakPrice:    0,
@@ -840,6 +852,11 @@ async function executeSell(mint, reason, attempt = 1) {
     closedTrades.unshift({ name:pos.name, reason, pnl, time: now() });
     if (closedTrades.length > 20) closedTrades.pop();
 
+    pos.closed     = true;
+    pos.exitReason = reason;
+    pos.exitPnl    = pnl;
+    pos.closedAt   = Date.now();
+    closedPositions.set(mint, pos);
     positions.delete(mint);
     renderPositions();
     renderClosed();
@@ -863,25 +880,29 @@ async function executeSell(mint, reason, attempt = 1) {
 // ═══════════════════════════════════════════════
 function renderPositions() {
   const grid = document.getElementById('positions-grid');
-  if (positions.size === 0) {
+  if (positions.size === 0 && closedPositions.size === 0) {
     grid.innerHTML = '<div id="empty-msg">No active positions.</div>';
     return;
   }
   grid.innerHTML = '';
-  positions.forEach((pos, mint) => grid.appendChild(buildCard(pos, mint)));
+  positions.forEach((pos, mint)       => grid.appendChild(buildCard(pos, mint)));
+  closedPositions.forEach((pos, mint) => grid.appendChild(buildCard(pos, mint)));
 }
 
 function buildCard(pos, mint) {
-  const pctNum  = pos.entryPrice > 0 ? (pos.currentPrice / pos.entryPrice - 1) * 100 : 0;
-  const pnlSol  = (pctNum / 100 * pos.solSpent);
-  const elapsed = msToTime(Date.now() - pos.openedAt);
+  const isClosed = !!pos.closed;
+  const pctNum   = pos.entryPrice > 0 ? (pos.currentPrice / pos.entryPrice - 1) * 100 : 0;
+  const pnlSol   = isClosed ? pos.exitPnl : (pctNum / 100 * pos.solSpent);
+  const elapsed  = msToTime((isClosed ? pos.closedAt || pos.openedAt : Date.now()) - pos.openedAt);
 
   const tpP    = pos.entryPrice * (1 + cfg.tpPct / 100);
   const slP    = pos.entryPrice * (1 - cfg.slPct / 100);
   const trailP = pos.peakPrice  * (1 - cfg.trailPct / 100);
 
+  const dexUrl = `https://dexscreener.com/solana/${pos.poolId}${cfg.publicKey ? '?maker=' + cfg.publicKey : ''}`;
+
   const card = document.createElement('div');
-  card.className = 'card' + (pctNum > 0 ? ' profit' : pctNum < 0 ? ' loss' : '');
+  card.className = 'card' + (isClosed ? ' closed' : (pctNum > 0 ? ' profit' : pctNum < 0 ? ' loss' : ''));
   card.id = 'card-' + mint;
 
   card.innerHTML = `
@@ -891,22 +912,27 @@ function buildCard(pos, mint) {
         <div class="card-pool">[${pos.pool}]</div>
       </div>
       <div style="text-align:right">
-        <div class="card-timer" id="timer-${mint}">${elapsed}</div>
-        <button class="sell-btn" onclick="triggerSell('${mint}','MANUAL')">SELL</button>
+        ${isClosed
+          ? `<span class="sold-badge">SOLD [${pos.exitReason}]</span>`
+          : `<div class="card-timer" id="timer-${mint}">${elapsed}</div>
+             <button class="sell-btn" onclick="triggerSell('${mint}','MANUAL')">SELL</button>`
+        }
       </div>
     </div>
     <div class="card-mint">${mint.slice(0,22)}...${mint.slice(-6)}</div>
     <hr class="card-hr">
     <div class="card-row"><span class="lbl">ENTRY</span>   <span>${fmtPrice(pos.entryPrice)}</span></div>
-    <div class="card-row"><span class="lbl">CURRENT</span> <span id="cp-${mint}" class="${pctNum>=0?'pos':'neg'}">${fmtPrice(pos.currentPrice)}</span></div>
+    <div class="card-row"><span class="lbl">${isClosed ? 'EXIT' : 'CURRENT'}</span> <span id="cp-${mint}" class="${pctNum>=0?'pos':'neg'}">${fmtPrice(pos.currentPrice)}</span></div>
     <div class="card-row"><span class="lbl">PEAK</span>    <span>${fmtPrice(pos.peakPrice)}</span></div>
+    ${!isClosed ? `
     <hr class="card-hr">
     <div class="card-row"><span class="lbl">TP</span>    <span style="color:var(--green)">${cfg.tpEnabled    ? fmtPrice(tpP)    : 'OFF'}</span></div>
     <div class="card-row"><span class="lbl">SL</span>    <span style="color:var(--red)">${cfg.slEnabled    ? fmtPrice(slP)    : 'OFF'}</span></div>
-    <div class="card-row"><span class="lbl">TRAIL</span> <span style="color:var(--amber)">${cfg.trailEnabled ? fmtPrice(trailP) : 'OFF'}</span></div>
-    <div class="card-pnl ${pctNum>=0?'pos':'neg'}" id="pnl-${mint}">
-      ${pctNum>=0?'+':''}${pctNum.toFixed(1)}% &nbsp; ${fmtPnl(pnlSol)}
-    </div>`;
+    <div class="card-row"><span class="lbl">TRAIL</span> <span style="color:var(--amber)">${cfg.trailEnabled ? fmtPrice(trailP) : 'OFF'}</span></div>` : ''}
+    <div class="card-pnl ${pnlSol>=0?'pos':'neg'}" id="pnl-${mint}">
+      ${pnlSol>=0?'+':''}${pnlSol.toFixed(4)} SOL (est.)
+    </div>
+    <a class="dex-link" href="${dexUrl}" target="_blank">⟶ DEXSCREENER</a>`;
   return card;
 }
 
