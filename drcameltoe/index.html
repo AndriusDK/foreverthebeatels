@@ -401,7 +401,7 @@ const DANGEROUS_EXT = new Set([
 ]);
 
 const API_URL = 'https://api.pumpapi.io';
-const WS_URL  = 'ws://localhost:3001';   // local proxy (run: node server.js)
+const WS_URL  = `ws://${window.location.hostname}:3001`;  // proxy on same server
 
 // ═══════════════════════════════════════════════
 //  SETTINGS
