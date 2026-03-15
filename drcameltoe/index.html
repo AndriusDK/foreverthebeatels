@@ -720,7 +720,6 @@ async function executeBuy(ev) {
       entryPrice:   0,        // set from first real trade event after buy confirms
       currentPrice: 0,
       peakPrice:    0,
-      activeAfter:  Date.now() + 5000,  // no exit checks for 5s after buy
       solSpent:     cfg.solAmount,
       openedAt:     Date.now(),
       selling:      false,
@@ -764,9 +763,6 @@ function handlePriceUpdate(ev) {
 
   pos.currentPrice  = price;
   if (price > pos.peakPrice) pos.peakPrice = price;
-
-  // Don't check exits until activeAfter delay has passed
-  if (Date.now() < pos.activeAfter) { updateCardPrice(mint, price, prev); return; }
 
   if (pos.entryPrice > 0) {
     const pctEntry = (price - pos.entryPrice) / pos.entryPrice * 100;
