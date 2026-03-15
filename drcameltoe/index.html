@@ -176,8 +176,14 @@
     @keyframes cardIn { from{opacity:0;transform:scale(.9) translateY(-8px)} to{opacity:1;transform:scale(1) translateY(0)} }
     .card.profit { border-color: var(--green); box-shadow: 0 0 7px rgba(0,255,136,.25); }
     .card.loss   { border-color: var(--red);   box-shadow: 0 0 7px rgba(255,51,102,.25); }
+    .card.watching { border-color: var(--amber); box-shadow: 0 0 7px rgba(255,184,0,.2); }
+    .card.watching .card-name { color: var(--amber); }
     .card.closed { opacity: .55; border-color: var(--grey); box-shadow: none; }
     .card.closed .card-name { color: var(--grey); }
+    .watch-bar-wrap { background: var(--bg3); height: 4px; margin-top: 6px; }
+    .watch-bar { height: 4px; background: var(--amber); transition: width .5s linear; box-shadow: 0 0 6px var(--amber); }
+    .watch-stat { font-size: 11px; display: flex; justify-content: space-between; margin-top: 4px; }
+    .watch-stat .hit { color: var(--green); }
     .sold-badge { font-size: 9px; letter-spacing: 1px; padding: 1px 5px; border: 1px solid var(--grey); color: var(--grey); }
     .dex-link { display: block; text-align: center; font-size: 9px; color: var(--cyan); text-decoration: none; margin-top: 5px; letter-spacing: 1px; border: 1px solid var(--grey); padding: 3px; }
     .dex-link:hover { background: rgba(0,255,229,.08); border-color: var(--cyan); }
@@ -361,6 +367,19 @@
       <div class="field"><input type="number" id="s-timerMin" value="10" min="1" oninput="save('timerMin',+this.value)"></div>
     </div>
 
+    <div class="sec-head" onclick="toggleSec(this)">OBSERVATION MODE <span>▾</span></div>
+    <div class="sec-body">
+      <div class="tog-wrap">
+        <label>ENABLED</label>
+        <label class="tog"><input type="checkbox" id="s-watchEnabled" checked onchange="save('watchEnabled',this.checked)"><span class="tog-sl"></span></label>
+      </div>
+      <div class="field"><label>WATCH WINDOW (SEC)</label><input type="number" id="s-watchSeconds" value="10" min="1" oninput="save('watchSeconds',+this.value)"></div>
+      <div class="row2">
+        <div class="field"><label>MIN BUYS</label><input type="number" id="s-watchMinBuys" value="3" min="1" oninput="save('watchMinBuys',+this.value)"></div>
+        <div class="field"><label>MIN BUYERS</label><input type="number" id="s-watchMinBuyers" value="3" min="1" oninput="save('watchMinBuyers',+this.value)"></div>
+      </div>
+    </div>
+
     <button id="start-btn" onclick="toggleBot()">▶ START BOT</button>
   </div>
 
@@ -424,6 +443,7 @@ const DEFAULTS = {
   slEnabled:true, slPct:30,
   trailEnabled:true, trailPct:20,
   timerEnabled:true, timerMin:10,
+  watchEnabled:true, watchSeconds:10, watchMinBuys:3, watchMinBuyers:3,
 };
 
 let cfg = { ...DEFAULTS };
@@ -442,13 +462,14 @@ function save(k, v) {
 
 function applyToUI() {
   ['privateKey','publicKey','solAmount','maxPositions','slippage','cooldown',
-   'minMcap','maxMcap','minSolInPool','tpPct','slPct','trailPct','timerMin'].forEach(k => {
+   'minMcap','maxMcap','minSolInPool','tpPct','slPct','trailPct','timerMin',
+   'watchSeconds','watchMinBuys','watchMinBuyers'].forEach(k => {
     const el = document.getElementById('s-'+k);
     if (el) el.value = cfg[k];
   });
   const feeEl = document.getElementById('s-priorityFee');
   if (feeEl) feeEl.value = cfg.priorityFee;
-  ['scamFilter','tpEnabled','slEnabled','trailEnabled','timerEnabled'].forEach(k => {
+  ['scamFilter','tpEnabled','slEnabled','trailEnabled','timerEnabled','watchEnabled'].forEach(k => {
     const el = document.getElementById('s-'+k);
     if (el) el.checked = cfg[k];
   });
@@ -488,6 +509,7 @@ function toggleKey() {
 // ═══════════════════════════════════════════════
 let positions       = new Map();   // mint → open pos
 let closedPositions = new Map();   // mint → closed pos (kept for display)
+let watchlist       = new Map();   // mint → observation entry
 let closedTrades    = [];
 let session = newSession();
 let ws = null;
@@ -518,6 +540,8 @@ function startBot() {
   session.startedAt = Date.now();
   positions.clear();
   closedPositions.clear();
+  watchlist.forEach(w => clearTimeout(w.timer));
+  watchlist.clear();
   closedTrades = [];
 
   document.getElementById('positions-grid').innerHTML = '<div id="empty-msg">Waiting for new tokens...</div>';
@@ -608,8 +632,9 @@ function handleEvent(ev) {
     return;
   }
 
-  if ((txType === 'buy' || txType === 'sell') && positions.has(mint)) {
-    handlePriceUpdate(ev);
+  if (txType === 'buy' || txType === 'sell') {
+    if (positions.has(mint))  handlePriceUpdate(ev);
+    if (watchlist.has(mint))  handleWatchUpdate(ev);
   }
 }
 
@@ -685,8 +710,65 @@ function handleCreate(ev) {
     return;
   }
 
-  addLog('buy', `NEW TOKEN ${tag} [${pool}] mcap:${(marketCapSol||0).toFixed(1)} SOL → BUYING`);
-  executeBuy(ev);
+  if (!cfg.watchEnabled) {
+    addLog('buy', `NEW TOKEN ${tag} [${pool}] mcap:${(marketCapSol||0).toFixed(1)} SOL → BUYING`);
+    executeBuy(ev);
+    return;
+  }
+
+  // Add to watchlist for observation
+  addLog('skip', `WATCHING ${tag} [${pool}] mcap:${(marketCapSol||0).toFixed(1)} SOL — waiting for confirmation...`);
+  const entry = {
+    ev, mint, name: name||symbol||mint.slice(0,8), symbol: symbol||'?', pool: pool||'?',
+    poolId: ev.poolId || mint,
+    startedAt:    Date.now(),
+    initialPrice: price || 0,
+    currentPrice: price || 0,
+    buyCount:     0,
+    uniqueBuyers: new Set(),
+    timer: null,
+  };
+  // Expire after watch window
+  entry.timer = setTimeout(() => {
+    if (watchlist.has(mint)) {
+      watchlist.delete(mint);
+      addLog('skip', `EXPIRED ${tag} — ${entry.buyCount} buys / ${entry.uniqueBuyers.size} buyers in ${cfg.watchSeconds}s`);
+      renderWatchCards();
+    }
+  }, cfg.watchSeconds * 1000);
+  watchlist.set(mint, entry);
+  renderWatchCards();
+}
+
+// ═══════════════════════════════════════════════
+//  WATCH UPDATE — check observation conditions
+// ═══════════════════════════════════════════════
+function handleWatchUpdate(ev) {
+  const { mint, txType, price, tradersInvolved } = ev;
+  const entry = watchlist.get(mint);
+  if (!entry) return;
+
+  if (price) entry.currentPrice = price;
+
+  if (txType === 'buy') {
+    entry.buyCount++;
+    if (tradersInvolved) {
+      Object.keys(tradersInvolved).forEach(addr => entry.uniqueBuyers.add(addr));
+    }
+  }
+
+  // Update watch card
+  updateWatchCard(mint, entry);
+
+  // Check if conditions met
+  if (entry.buyCount >= cfg.watchMinBuys && entry.uniqueBuyers.size >= cfg.watchMinBuyers) {
+    clearTimeout(entry.timer);
+    watchlist.delete(mint);
+    const tag = entry.symbol.toUpperCase();
+    addLog('buy', `CONFIRMED ${tag} — ${entry.buyCount} buys / ${entry.uniqueBuyers.size} buyers → BUYING`);
+    renderWatchCards();
+    executeBuy(entry.ev);
+  }
 }
 
 // ═══════════════════════════════════════════════
@@ -880,13 +962,86 @@ async function executeSell(mint, reason, attempt = 1) {
 // ═══════════════════════════════════════════════
 function renderPositions() {
   const grid = document.getElementById('positions-grid');
-  if (positions.size === 0 && closedPositions.size === 0) {
+  if (positions.size === 0 && closedPositions.size === 0 && watchlist.size === 0) {
     grid.innerHTML = '<div id="empty-msg">No active positions.</div>';
     return;
   }
   grid.innerHTML = '';
+  watchlist.forEach((entry, mint)     => grid.appendChild(buildWatchCard(entry, mint)));
   positions.forEach((pos, mint)       => grid.appendChild(buildCard(pos, mint)));
   closedPositions.forEach((pos, mint) => grid.appendChild(buildCard(pos, mint)));
+}
+
+function renderWatchCards() {
+  // Lightweight refresh — rebuild just watch cards without touching position cards
+  const grid = document.getElementById('positions-grid');
+  // Remove existing watch cards
+  grid.querySelectorAll('.watch-card').forEach(c => c.remove());
+  const emptyMsg = document.getElementById('empty-msg');
+  if (emptyMsg) emptyMsg.remove();
+  // Prepend new watch cards
+  const frag = document.createDocumentFragment();
+  watchlist.forEach((entry, mint) => frag.appendChild(buildWatchCard(entry, mint)));
+  grid.prepend(frag);
+  // Show empty if nothing at all
+  if (positions.size === 0 && closedPositions.size === 0 && watchlist.size === 0) {
+    grid.innerHTML = '<div id="empty-msg">No active positions.</div>';
+  }
+}
+
+function buildWatchCard(entry, mint) {
+  const elapsed  = (Date.now() - entry.startedAt) / 1000;
+  const pct      = cfg.watchSeconds > 0 ? Math.min(elapsed / cfg.watchSeconds * 100, 100) : 100;
+  const buysHit  = entry.buyCount     >= cfg.watchMinBuys;
+  const buyrsHit = entry.uniqueBuyers.size >= cfg.watchMinBuyers;
+  const pricePct = entry.initialPrice > 0 ? ((entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100).toFixed(1) : '0.0';
+  const timeLeft = Math.max(0, cfg.watchSeconds - Math.floor(elapsed));
+  const dexUrl   = `https://dexscreener.com/solana/${entry.poolId}${cfg.publicKey ? '?maker=' + cfg.publicKey : ''}`;
+
+  const card = document.createElement('div');
+  card.className = 'card watching watch-card';
+  card.id = 'wcard-' + mint;
+  card.innerHTML = `
+    <div class="card-top">
+      <div>
+        <div class="card-name">${entry.name.slice(0,12).toUpperCase()}</div>
+        <div class="card-pool">[${entry.pool}]</div>
+      </div>
+      <div style="text-align:right;font-size:9px;color:var(--amber)">
+        WATCHING ${timeLeft}s
+      </div>
+    </div>
+    <div class="watch-bar-wrap"><div class="watch-bar" id="wbar-${mint}" style="width:${pct}%"></div></div>
+    <div class="watch-stat">
+      <span class="${buysHit ? 'hit' : ''}">BUYS: ${entry.buyCount}/${cfg.watchMinBuys}</span>
+      <span class="${buyrsHit ? 'hit' : ''}">BUYERS: ${entry.uniqueBuyers.size}/${cfg.watchMinBuyers}</span>
+      <span class="${+pricePct > 0 ? 'pos' : 'neg'}">Δ${pricePct}%</span>
+    </div>
+    <a class="dex-link" href="${dexUrl}" target="_blank">⟶ DEXSCREENER</a>`;
+  return card;
+}
+
+function updateWatchCard(mint, entry) {
+  const card = document.getElementById('wcard-' + mint);
+  if (!card) return;
+  const elapsed  = (Date.now() - entry.startedAt) / 1000;
+  const pct      = Math.min(elapsed / cfg.watchSeconds * 100, 100);
+  const timeLeft = Math.max(0, cfg.watchSeconds - Math.floor(elapsed));
+  const buysHit  = entry.buyCount >= cfg.watchMinBuys;
+  const buyrsHit = entry.uniqueBuyers.size >= cfg.watchMinBuyers;
+  const pricePct = entry.initialPrice > 0 ? ((entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100).toFixed(1) : '0.0';
+
+  const bar = document.getElementById('wbar-' + mint);
+  if (bar) bar.style.width = pct + '%';
+
+  const stats = card.querySelector('.watch-stat');
+  if (stats) stats.innerHTML = `
+    <span class="${buysHit ? 'hit' : ''}">BUYS: ${entry.buyCount}/${cfg.watchMinBuys}</span>
+    <span class="${buyrsHit ? 'hit' : ''}">BUYERS: ${entry.uniqueBuyers.size}/${cfg.watchMinBuyers}</span>
+    <span class="${+pricePct > 0 ? 'pos' : 'neg'}">Δ${pricePct}%</span>`;
+
+  const timer = card.querySelector('[id^="wcard-"] > div:last-of-type');
+  card.querySelector('.card-top > div:last-child').textContent = `WATCHING ${timeLeft}s`;
 }
 
 function buildCard(pos, mint) {
@@ -964,6 +1119,7 @@ setInterval(() => {
     const el = document.getElementById('timer-' + mint);
     if (el) el.textContent = msToTime(Date.now() - pos.openedAt);
   });
+  watchlist.forEach((entry, mint) => updateWatchCard(mint, entry));
 }, 1000);
 
 function renderClosed() {
