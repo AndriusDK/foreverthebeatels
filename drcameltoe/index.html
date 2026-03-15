@@ -767,7 +767,7 @@ function handleCreate(ev) {
 
   if (!cfg.watchEnabled) {
     addLog('buy', `NEW TOKEN ${tag} [${pool}] mcap:${(marketCapSol||0).toFixed(1)} SOL → BUYING`);
-    executeBuy(ev);
+    executeBuy(ev, { mcapSol: marketCapSol || 0, poolSol: solInPool || 0 });
     return;
   }
 
@@ -858,15 +858,24 @@ function handleWatchUpdate(ev) {
   // All conditions met — buy
   clearTimeout(entry.timer);
   watchlist.delete(mint);
+  const pumpPct = entry.initialPrice > 0 ? (entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100 : 0;
   addLog('buy', `CONFIRMED ${tag} — ${entry.buyCount} buys / ${entry.uniqueBuyers.size} buyers / ${velocitySecs.toFixed(1)}s${entry.solVolume > 0 ? ' / ' + entry.solVolume.toFixed(3) + '◎' : ''} → BUYING`);
   renderWatchCards();
-  executeBuy(entry.ev);
+  executeBuy(entry.ev, {
+    mcapSol:      entry.ev.marketCapSol || 0,
+    poolSol:      entry.ev.solInPool    || 0,
+    buys:         entry.buyCount,
+    buyers:       entry.uniqueBuyers.size,
+    velocitySecs: +velocitySecs.toFixed(1),
+    solVol:       +entry.solVolume.toFixed(4),
+    pumpPct:      +pumpPct.toFixed(1),
+  });
 }
 
 // ═══════════════════════════════════════════════
 //  BUY
 // ═══════════════════════════════════════════════
-async function executeBuy(ev) {
+async function executeBuy(ev, watchStats = {}) {
   const { mint, name, symbol, pool, price, poolId } = ev;
   const tag = (symbol || (name||'').slice(0,8) || mint.slice(0,8)).toUpperCase();
 
@@ -912,6 +921,7 @@ async function executeBuy(ev) {
       timerHandle:  null,
       flatlineTimer:null,
       partialSold:  false,
+      entryStats:   watchStats,
     };
 
     positions.set(mint, pos);
@@ -1207,6 +1217,19 @@ function updateWatchCard(mint, entry) {
   card.querySelector('.card-top > div:last-child').textContent = `WATCHING ${timeLeft}s`;
 }
 
+function buildEntryStatsHtml(s) {
+  if (!s || Object.keys(s).length === 0) return '';
+  const rows = [];
+  if (s.mcapSol  != null) rows.push(`<div class="card-row"><span class="lbl">MCAP AT ENTRY</span><span>${s.mcapSol.toFixed(1)} SOL</span></div>`);
+  if (s.poolSol  != null) rows.push(`<div class="card-row"><span class="lbl">POOL AT ENTRY</span><span>${s.poolSol.toFixed(2)} SOL</span></div>`);
+  if (s.buys     != null) rows.push(`<div class="card-row"><span class="lbl">BUYS / BUYERS</span><span>${s.buys} / ${s.buyers}</span></div>`);
+  if (s.velocitySecs != null) rows.push(`<div class="card-row"><span class="lbl">FILL SPEED</span><span>${s.velocitySecs}s</span></div>`);
+  if (s.solVol   != null && s.solVol > 0) rows.push(`<div class="card-row"><span class="lbl">WATCH VOL</span><span>${s.solVol.toFixed(3)} SOL</span></div>`);
+  if (s.pumpPct  != null) rows.push(`<div class="card-row"><span class="lbl">PUMP BEFORE BUY</span><span class="${s.pumpPct>=0?'pos':'neg'}">${s.pumpPct>=0?'+':''}${s.pumpPct}%</span></div>`);
+  if (!rows.length) return '';
+  return `<hr class="card-hr"><div style="font-size:8px;letter-spacing:1px;color:var(--grey);margin-bottom:3px">ENTRY STATS</div>${rows.join('')}`;
+}
+
 function buildCard(pos, mint) {
   const isClosed = !!pos.closed;
   const pctNum   = pos.entryPrice > 0 ? (pos.currentPrice / pos.entryPrice - 1) * 100 : 0;
@@ -1247,6 +1270,7 @@ function buildCard(pos, mint) {
     <div class="card-row"><span class="lbl">TP</span>    <span style="color:var(--green)">${cfg.tpEnabled    ? fmtPrice(tpP)    : 'OFF'}</span></div>
     <div class="card-row"><span class="lbl">SL</span>    <span style="color:var(--red)">${cfg.slEnabled    ? fmtPrice(slP)    : 'OFF'}</span></div>
     <div class="card-row"><span class="lbl">TRAIL</span> <span style="color:var(--amber)">${cfg.trailEnabled ? fmtPrice(trailP) : 'OFF'}</span></div>` : ''}
+    ${buildEntryStatsHtml(pos.entryStats)}
     <div class="card-pnl ${pnlSol>=0?'pos':'neg'}" id="pnl-${mint}">
       ${pnlSol>=0?'+':''}${pnlSol.toFixed(4)} SOL (est.)
     </div>
