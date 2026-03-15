@@ -359,12 +359,31 @@
         <label class="tog"><input type="checkbox" id="s-trailEnabled" checked onchange="save('trailEnabled',this.checked)"><span class="tog-sl"></span></label>
       </div>
       <div class="field"><input type="number" id="s-trailPct" value="20" min="1" oninput="save('trailPct',+this.value)"></div>
+      <div class="field"><label>TRAIL ACTIVATES AFTER % GAIN (0=always)</label><input type="number" id="s-trailActivatePct" value="5" min="0" step="0.5" oninput="save('trailActivatePct',+this.value)"></div>
 
       <div class="tog-wrap">
         <label>MAX TRADE DURATION (MIN)</label>
         <label class="tog"><input type="checkbox" id="s-timerEnabled" checked onchange="save('timerEnabled',this.checked)"><span class="tog-sl"></span></label>
       </div>
       <div class="field"><input type="number" id="s-timerMin" value="10" min="1" oninput="save('timerMin',+this.value)"></div>
+
+      <div class="tog-wrap">
+        <label>FLATLINE CUT (no movement = dead)</label>
+        <label class="tog"><input type="checkbox" id="s-flatlineEnabled" checked onchange="save('flatlineEnabled',this.checked)"><span class="tog-sl"></span></label>
+      </div>
+      <div class="row2">
+        <div class="field"><label>CHECK AFTER (SEC)</label><input type="number" id="s-flatlineSeconds" value="20" min="5" oninput="save('flatlineSeconds',+this.value)"></div>
+        <div class="field"><label>MAX MOVE ±%</label><input type="number" id="s-flatlinePct" value="2" min="0.1" step="0.1" oninput="save('flatlinePct',+this.value)"></div>
+      </div>
+
+      <div class="tog-wrap">
+        <label>SCALE-OUT (partial exit at TP1)</label>
+        <label class="tog"><input type="checkbox" id="s-scaleOutEnabled" onchange="save('scaleOutEnabled',this.checked)"><span class="tog-sl"></span></label>
+      </div>
+      <div class="row2">
+        <div class="field"><label>TP1 % GAIN</label><input type="number" id="s-scaleOutTp1Pct" value="20" min="1" oninput="save('scaleOutTp1Pct',+this.value)"></div>
+        <div class="field"><label>SELL % AT TP1</label><input type="number" id="s-scaleOutSellPct" value="50" min="10" max="90" oninput="save('scaleOutSellPct',+this.value)"></div>
+      </div>
     </div>
 
     <div class="sec-head" onclick="toggleSec(this)">OBSERVATION MODE <span>▾</span></div>
@@ -378,6 +397,11 @@
         <div class="field"><label>MIN BUYS</label><input type="number" id="s-watchMinBuys" value="3" min="1" oninput="save('watchMinBuys',+this.value)"></div>
         <div class="field"><label>MIN BUYERS</label><input type="number" id="s-watchMinBuyers" value="3" min="1" oninput="save('watchMinBuyers',+this.value)"></div>
       </div>
+      <div class="row2">
+        <div class="field"><label>MAX FILL SPEED (SEC, 0=off)</label><input type="number" id="s-watchMaxVelocitySecs" value="30" min="0" oninput="save('watchMaxVelocitySecs',+this.value)"></div>
+        <div class="field"><label>MIN SOL VOL (0=off)</label><input type="number" id="s-watchMinSolVol" value="0" min="0" step="0.01" oninput="save('watchMinSolVol',+this.value)"></div>
+      </div>
+      <div class="field"><label>MAX PUMP BEFORE ENTRY % (0=off)</label><input type="number" id="s-watchMaxPumpPct" value="200" min="0" oninput="save('watchMaxPumpPct',+this.value)"></div>
     </div>
 
     <button id="start-btn" onclick="toggleBot()">▶ START BOT</button>
@@ -441,9 +465,12 @@ const DEFAULTS = {
   minMcap:10, maxMcap:500, minSolInPool:5, scamFilter:true,
   tpEnabled:true, tpPct:50,
   slEnabled:true, slPct:30,
-  trailEnabled:true, trailPct:20,
+  trailEnabled:true, trailPct:20, trailActivatePct:5,
   timerEnabled:true, timerMin:10,
+  flatlineEnabled:true, flatlineSeconds:20, flatlinePct:2,
+  scaleOutEnabled:false, scaleOutTp1Pct:20, scaleOutSellPct:50,
   watchEnabled:true, watchSeconds:10, watchMinBuys:3, watchMinBuyers:3,
+  watchMaxVelocitySecs:30, watchMinSolVol:0, watchMaxPumpPct:200,
 };
 
 let cfg = { ...DEFAULTS };
@@ -462,14 +489,15 @@ function save(k, v) {
 
 function applyToUI() {
   ['privateKey','publicKey','solAmount','maxPositions','slippage','cooldown',
-   'minMcap','maxMcap','minSolInPool','tpPct','slPct','trailPct','timerMin',
-   'watchSeconds','watchMinBuys','watchMinBuyers'].forEach(k => {
+   'minMcap','maxMcap','minSolInPool','tpPct','slPct','trailPct','trailActivatePct','timerMin',
+   'flatlineSeconds','flatlinePct','scaleOutTp1Pct','scaleOutSellPct',
+   'watchSeconds','watchMinBuys','watchMinBuyers','watchMaxVelocitySecs','watchMinSolVol','watchMaxPumpPct'].forEach(k => {
     const el = document.getElementById('s-'+k);
     if (el) el.value = cfg[k];
   });
   const feeEl = document.getElementById('s-priorityFee');
   if (feeEl) feeEl.value = cfg.priorityFee;
-  ['scamFilter','tpEnabled','slEnabled','trailEnabled','timerEnabled','watchEnabled'].forEach(k => {
+  ['scamFilter','tpEnabled','slEnabled','trailEnabled','timerEnabled','flatlineEnabled','scaleOutEnabled','watchEnabled'].forEach(k => {
     const el = document.getElementById('s-'+k);
     if (el) el.checked = cfg[k];
   });
@@ -726,6 +754,7 @@ function handleCreate(ev) {
     currentPrice: price || 0,
     buyCount:     0,
     uniqueBuyers: new Set(),
+    solVolume:    0,
     timer: null,
   };
   // Expire after watch window
@@ -744,7 +773,7 @@ function handleCreate(ev) {
 //  WATCH UPDATE — check observation conditions
 // ═══════════════════════════════════════════════
 function handleWatchUpdate(ev) {
-  const { mint, txType, price, tradersInvolved } = ev;
+  const { mint, txType, price, tradersInvolved, solAmount, quoteAmount } = ev;
   const entry = watchlist.get(mint);
   if (!entry) return;
 
@@ -752,6 +781,7 @@ function handleWatchUpdate(ev) {
 
   if (txType === 'buy') {
     entry.buyCount++;
+    entry.solVolume += (solAmount || quoteAmount || 0);
     if (tradersInvolved) {
       Object.keys(tradersInvolved).forEach(addr => entry.uniqueBuyers.add(addr));
     }
@@ -760,15 +790,42 @@ function handleWatchUpdate(ev) {
   // Update watch card
   updateWatchCard(mint, entry);
 
-  // Check if conditions met
-  if (entry.buyCount >= cfg.watchMinBuys && entry.uniqueBuyers.size >= cfg.watchMinBuyers) {
+  // Check count conditions first
+  if (entry.buyCount < cfg.watchMinBuys || entry.uniqueBuyers.size < cfg.watchMinBuyers) return;
+
+  const tag          = entry.symbol.toUpperCase();
+  const velocitySecs = (Date.now() - entry.startedAt) / 1000;
+
+  // Velocity filter — too slow means cold momentum
+  if (cfg.watchMaxVelocitySecs > 0 && velocitySecs > cfg.watchMaxVelocitySecs) {
     clearTimeout(entry.timer);
     watchlist.delete(mint);
-    const tag = entry.symbol.toUpperCase();
-    addLog('buy', `CONFIRMED ${tag} — ${entry.buyCount} buys / ${entry.uniqueBuyers.size} buyers → BUYING`);
+    addLog('skip', `SLOW ${tag} — ${velocitySecs.toFixed(1)}s to confirm (max ${cfg.watchMaxVelocitySecs}s) → SKIP`);
     renderWatchCards();
-    executeBuy(entry.ev);
+    return;
   }
+
+  // Already pumped — buying the top
+  if (cfg.watchMaxPumpPct > 0 && entry.initialPrice > 0) {
+    const pumpPct = (entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100;
+    if (pumpPct > cfg.watchMaxPumpPct) {
+      clearTimeout(entry.timer);
+      watchlist.delete(mint);
+      addLog('skip', `PUMPED ${tag} — already +${pumpPct.toFixed(0)}% (max ${cfg.watchMaxPumpPct}%) → SKIP`);
+      renderWatchCards();
+      return;
+    }
+  }
+
+  // SOL volume — wait silently until threshold reached (don't fire yet)
+  if (cfg.watchMinSolVol > 0 && entry.solVolume < cfg.watchMinSolVol) return;
+
+  // All conditions met — buy
+  clearTimeout(entry.timer);
+  watchlist.delete(mint);
+  addLog('buy', `CONFIRMED ${tag} — ${entry.buyCount} buys / ${entry.uniqueBuyers.size} buyers / ${velocitySecs.toFixed(1)}s${entry.solVolume > 0 ? ' / ' + entry.solVolume.toFixed(3) + '◎' : ''} → BUYING`);
+  renderWatchCards();
+  executeBuy(entry.ev);
 }
 
 // ═══════════════════════════════════════════════
@@ -818,6 +875,8 @@ async function executeBuy(ev) {
       openedAt:     Date.now(),
       selling:      false,
       timerHandle:  null,
+      flatlineTimer:null,
+      partialSold:  false,
     };
 
     positions.set(mint, pos);
@@ -852,7 +911,17 @@ function handlePriceUpdate(ev) {
   if (pos.entryPrice === 0) {
     pos.entryPrice  = price;
     pos.peakPrice   = price;
-    addLog('info' in console ? 'sys' : 'sys', `${pos.name} entry price set: ${fmtPrice(price)}`);
+    addLog('sys', `${pos.name} entry price set: ${fmtPrice(price)}`);
+
+    // Flatline timer: cut dead tokens that don't move
+    if (cfg.flatlineEnabled) {
+      pos.flatlineTimer = setTimeout(() => {
+        const p = positions.get(mint);
+        if (!p || p.selling) return;
+        const pctEntry = p.entryPrice > 0 ? (p.currentPrice - p.entryPrice) / p.entryPrice * 100 : 0;
+        if (Math.abs(pctEntry) < cfg.flatlinePct) triggerSell(mint, 'FLAT');
+      }, cfg.flatlineSeconds * 1000);
+    }
   }
 
   pos.currentPrice  = price;
@@ -862,9 +931,19 @@ function handlePriceUpdate(ev) {
     const pctEntry = (price - pos.entryPrice) / pos.entryPrice * 100;
     const pctPeak  = (price - pos.peakPrice)  / pos.peakPrice  * 100;
 
+    // Scale-out: partial sell at TP1, let remainder ride
+    if (cfg.scaleOutEnabled && !pos.partialSold && pctEntry >= cfg.scaleOutTp1Pct) {
+      triggerPartialSell(mint);
+      return;
+    }
+
     if (cfg.tpEnabled    && pctEntry >=  cfg.tpPct)    { triggerSell(mint, 'TP');    return; }
     if (cfg.slEnabled    && pctEntry <= -cfg.slPct)    { triggerSell(mint, 'SL');    return; }
-    if (cfg.trailEnabled && pctPeak  <= -cfg.trailPct) { triggerSell(mint, 'TRAIL'); return; }
+    // Trail only activates once price is up cfg.trailActivatePct% (avoids noise near entry)
+    if (cfg.trailEnabled && pctEntry >= cfg.trailActivatePct && pctPeak <= -cfg.trailPct) {
+      triggerSell(mint, 'TRAIL');
+      return;
+    }
   }
 
   updateCardPrice(mint, price, prev);
@@ -878,9 +957,52 @@ function triggerSell(mint, reason) {
   if (!pos || pos.selling) return;
   pos.selling = true;
   clearTimeout(pos.timerHandle);
-  addLog(reason === 'TP' || reason === 'TRAIL' ? 'sell' : 'loss',
-    `${pos.name} → ${reason} → SELLING`);
+  clearTimeout(pos.flatlineTimer);
+  const logType = (reason === 'TP' || reason === 'TRAIL') ? 'sell' : 'loss';
+  addLog(logType, `${pos.name} → ${reason} → SELLING`);
   executeSell(mint, reason);
+}
+
+async function triggerPartialSell(mint) {
+  const pos = positions.get(mint);
+  if (!pos || pos.partialSold || pos.selling) return;
+  pos.partialSold = true;
+  const pct = cfg.scaleOutSellPct;
+  addLog('sell', `${pos.name} → TP1 +${cfg.scaleOutTp1Pct}% → PARTIAL SELL ${pct}%`);
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        privateKey:         cfg.privateKey,
+        action:             'sell',
+        mint,
+        amount:             `${pct}%`,
+        denominatedInQuote: 'true',
+        slippage:           cfg.slippage,
+        priorityFee:        cfg.priorityFee,
+      })
+    });
+    if (!res.ok) {
+      addLog('error', `PARTIAL SELL FAILED ${pos.name} — HTTP ${res.status}`);
+      pos.partialSold = false;
+      return;
+    }
+    const data  = await res.json().catch(()=>({}));
+    const txSig = data?.signature || (Array.isArray(data) ? data[0]?.signature : null) || '?';
+    // Realize partial PNL
+    const fraction = pct / 100;
+    const pnlPart  = pos.entryPrice > 0 ? (pos.currentPrice / pos.entryPrice - 1) * pos.solSpent * fraction : 0;
+    session.solReturned += pos.solSpent * fraction + pnlPart;
+    session.pnl         += pnlPart;
+    session.history.push({ t: Date.now() - session.startedAt, pnl: session.pnl });
+    pos.solSpent *= (1 - fraction);  // remaining stake for full exit
+    addLog('sell', `PARTIAL SOLD ${pos.name} [TP1 ${pct}%] +${pnlPart.toFixed(4)}◎ tx:${String(txSig).slice(0,20)}...`);
+    updateHeader(); drawGraph();
+  } catch(e) {
+    addLog('error', `PARTIAL SELL ERROR ${pos.name} — ${e.message}`);
+    pos.partialSold = false;
+  }
 }
 
 async function executeSell(mint, reason, attempt = 1) {
@@ -1016,6 +1138,7 @@ function buildWatchCard(entry, mint) {
       <span class="${buysHit ? 'hit' : ''}">BUYS: ${entry.buyCount}/${cfg.watchMinBuys}</span>
       <span class="${buyrsHit ? 'hit' : ''}">BUYERS: ${entry.uniqueBuyers.size}/${cfg.watchMinBuyers}</span>
       <span class="${+pricePct > 0 ? 'pos' : 'neg'}">Δ${pricePct}%</span>
+      ${entry.solVolume > 0 ? `<span>VOL:${entry.solVolume.toFixed(3)}◎</span>` : ''}
     </div>
     <a class="dex-link" href="${dexUrl}" target="_blank">⟶ DEXSCREENER</a>`;
   return card;
@@ -1038,7 +1161,8 @@ function updateWatchCard(mint, entry) {
   if (stats) stats.innerHTML = `
     <span class="${buysHit ? 'hit' : ''}">BUYS: ${entry.buyCount}/${cfg.watchMinBuys}</span>
     <span class="${buyrsHit ? 'hit' : ''}">BUYERS: ${entry.uniqueBuyers.size}/${cfg.watchMinBuyers}</span>
-    <span class="${+pricePct > 0 ? 'pos' : 'neg'}">Δ${pricePct}%</span>`;
+    <span class="${+pricePct > 0 ? 'pos' : 'neg'}">Δ${pricePct}%</span>
+    ${entry.solVolume > 0 ? `<span>VOL:${entry.solVolume.toFixed(3)}◎</span>` : ''}`;
 
   const timer = card.querySelector('[id^="wcard-"] > div:last-of-type');
   card.querySelector('.card-top > div:last-child').textContent = `WATCHING ${timeLeft}s`;
