@@ -734,6 +734,7 @@ function handleEvent(ev) {
 // ═══════════════════════════════════════════════
 function handleCreate(ev) {
   if (!botRunning) return;
+  if (cfg.reclaimEnabled) return;  // reclaim mode — only re-enter via reclaim watchlist
 
   const {
     mint, name, symbol, pool,
@@ -1357,7 +1358,7 @@ async function executeSell(mint, reason, attempt = 1) {
     addLog(pnl >= 0 ? 'sell' : 'loss', `[PAPER] SOLD ${pos.name} [${reason}] PNL:${fmtPnl(pnl)} (${cfg.paperLatencyPct}% latency adj)`);
     const symKey = (pos.symbol || pos.name || '').toLowerCase().trim();
     if (symKey) recentSymbols.set(symKey, Date.now());
-    if (cfg.reclaimEnabled && (reason === 'SL' || reason === 'TRAIL') && pos.currentPrice > 0) {
+    if (cfg.reclaimEnabled && pos.currentPrice > 0) {
       addToReclaimWatchlist(pos);
     }
     closedTrades.unshift({ name: pos.name, reason, pnl, time: now() });
@@ -1418,7 +1419,7 @@ async function executeSell(mint, reason, attempt = 1) {
     if (symKey) recentSymbols.set(symKey, Date.now());
 
     // Reclaim watch — monitor for dump+recovery re-entry after SL/TRAIL
-    if (cfg.reclaimEnabled && (reason === 'SL' || reason === 'TRAIL') && pos.currentPrice > 0) {
+    if (cfg.reclaimEnabled && pos.currentPrice > 0) {
       addToReclaimWatchlist(pos);
     }
 
