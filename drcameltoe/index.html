@@ -406,6 +406,7 @@
         <div class="field"><label>MAX FILL SPEED (SEC, 0=off)</label><input type="number" id="s-watchMaxVelocitySecs" value="30" min="0" oninput="save('watchMaxVelocitySecs',+this.value)"></div>
       </div>
       <div class="field"><label>MIN SOL VOL (0=off)</label><input type="number" id="s-watchMinSolVol" value="0" min="0" step="0.01" oninput="save('watchMinSolVol',+this.value)"></div>
+      <div class="field"><label>MIN PUMP BEFORE ENTRY % (0=off)</label><input type="number" id="s-watchMinPumpPct" value="0" min="0" oninput="save('watchMinPumpPct',+this.value)"></div>
       <div class="field"><label>MAX PUMP BEFORE ENTRY % (0=off)</label><input type="number" id="s-watchMaxPumpPct" value="200" min="0" oninput="save('watchMaxPumpPct',+this.value)"></div>
     </div>
 
@@ -501,7 +502,7 @@ const DEFAULTS = {
   flatlineEnabled:true, flatlineSeconds:20, flatlinePct:2,
   scaleOutEnabled:false, scaleOutTp1Pct:20, scaleOutSellPct:50,
   watchEnabled:true, watchSeconds:10, watchMinBuys:3, watchMinBuyers:3,
-  watchMinVelocitySecs:2, watchMaxVelocitySecs:30, watchMinSolVol:0, watchMaxPumpPct:200,
+  watchMinVelocitySecs:2, watchMaxVelocitySecs:30, watchMinSolVol:0, watchMinPumpPct:0, watchMaxPumpPct:200,
   symCooldownEnabled:true, symCooldownSecs:300,
   reclaimEnabled:false, reclaimWindowSecs:120, reclaimMinDumpPct:10, reclaimMinRecoverPct:5, reclaimMinBuys:3, reclaimMinBuyers:3,
 };
@@ -524,7 +525,7 @@ function applyToUI() {
   ['privateKey','publicKey','solAmount','maxPositions','slippage','cooldown',
    'minMcap','maxMcap','minSolInPool','tpPct','slPct','trailPct','trailActivatePct','timerMin',
    'flatlineSeconds','flatlinePct','scaleOutTp1Pct','scaleOutSellPct',
-   'watchSeconds','watchMinBuys','watchMinBuyers','watchMinVelocitySecs','watchMaxVelocitySecs','watchMinSolVol','watchMaxPumpPct',
+   'watchSeconds','watchMinBuys','watchMinBuyers','watchMinVelocitySecs','watchMaxVelocitySecs','watchMinSolVol','watchMinPumpPct','watchMaxPumpPct',
    'symCooldownSecs',
    'reclaimWindowSecs','reclaimMinDumpPct','reclaimMinRecoverPct','reclaimMinBuys','reclaimMinBuyers'].forEach(k => {
     const el = document.getElementById('s-'+k);
@@ -863,6 +864,18 @@ function handleWatchUpdate(ev) {
     addLog('skip', `SLOW ${tag} — ${velocitySecs.toFixed(1)}s to confirm (max ${cfg.watchMaxVelocitySecs}s) → SKIP`);
     renderWatchCards();
     return;
+  }
+
+  // Not pumped enough — skip weak momentum
+  if (cfg.watchMinPumpPct > 0 && entry.initialPrice > 0) {
+    const pumpPct = (entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100;
+    if (pumpPct < cfg.watchMinPumpPct) {
+      clearTimeout(entry.timer);
+      watchlist.delete(mint);
+      addLog('skip', `WEAK ${tag} — only +${pumpPct.toFixed(0)}% (min ${cfg.watchMinPumpPct}%) → SKIP`);
+      renderWatchCards();
+      return;
+    }
   }
 
   // Already pumped — buying the top
