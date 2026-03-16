@@ -866,16 +866,10 @@ function handleWatchUpdate(ev) {
     return;
   }
 
-  // Not pumped enough — skip weak momentum
+  // Not pumped enough yet — wait silently for more price action
   if (cfg.watchMinPumpPct > 0 && entry.initialPrice > 0) {
     const pumpPct = (entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100;
-    if (pumpPct < cfg.watchMinPumpPct) {
-      clearTimeout(entry.timer);
-      watchlist.delete(mint);
-      addLog('skip', `WEAK ${tag} — only +${pumpPct.toFixed(0)}% (min ${cfg.watchMinPumpPct}%) → SKIP`);
-      renderWatchCards();
-      return;
-    }
+    if (pumpPct < cfg.watchMinPumpPct) return;
   }
 
   // Already pumped — buying the top
