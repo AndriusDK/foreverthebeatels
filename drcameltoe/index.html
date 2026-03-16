@@ -773,16 +773,10 @@ function handleCreate(ev) {
     }
   }
 
-  // Market cap
-  if (marketCapSol != null) {
-    if (marketCapSol < cfg.minMcap) {
-      addLog('skip', `SKIP ${tag} — mcap ${marketCapSol.toFixed(1)} < min ${cfg.minMcap}`);
-      return;
-    }
-    if (marketCapSol > cfg.maxMcap) {
-      addLog('skip', `SKIP ${tag} — mcap ${marketCapSol.toFixed(1)} > max ${cfg.maxMcap}`);
-      return;
-    }
+  // Market cap — only hard-reject if already above max at launch
+  if (marketCapSol != null && cfg.maxMcap > 0 && marketCapSol > cfg.maxMcap) {
+    addLog('skip', `SKIP ${tag} — mcap ${marketCapSol.toFixed(1)} > max ${cfg.maxMcap}`);
+    return;
   }
 
   // Min SOL in pool
@@ -805,6 +799,8 @@ function handleCreate(ev) {
     startedAt:    Date.now(),
     initialPrice: price || 0,
     currentPrice: price || 0,
+    initialMcap:  marketCapSol || 0,
+    currentMcap:  marketCapSol || 0,
     buyCount:     0,
     uniqueBuyers: new Set(),
     solVolume:    0,
@@ -830,7 +826,11 @@ function handleWatchUpdate(ev) {
   const entry = watchlist.get(mint);
   if (!entry) return;
 
-  if (price) entry.currentPrice = price;
+  if (price) {
+    entry.currentPrice = price;
+    if (entry.initialPrice > 0 && entry.initialMcap > 0)
+      entry.currentMcap = entry.initialMcap * (price / entry.initialPrice);
+  }
 
   if (txType === 'buy') {
     entry.buyCount++;
@@ -866,6 +866,18 @@ function handleWatchUpdate(ev) {
     return;
   }
 
+  // Mcap below min — wait silently until it grows
+  if (cfg.minMcap > 0 && entry.currentMcap > 0 && entry.currentMcap < cfg.minMcap) return;
+
+  // Mcap above max during observation — kill
+  if (cfg.maxMcap > 0 && entry.currentMcap > 0 && entry.currentMcap > cfg.maxMcap) {
+    clearTimeout(entry.timer);
+    watchlist.delete(mint);
+    addLog('skip', `SKIP ${tag} — mcap grew to ${entry.currentMcap.toFixed(1)} > max ${cfg.maxMcap}`);
+    renderWatchCards();
+    return;
+  }
+
   // Not pumped enough yet — wait silently for more price action
   if (cfg.watchMinPumpPct > 0 && entry.initialPrice > 0) {
     const pumpPct = (entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100;
@@ -894,7 +906,7 @@ function handleWatchUpdate(ev) {
   addLog('buy', `CONFIRMED ${tag} — ${entry.buyCount} buys / ${entry.uniqueBuyers.size} buyers / ${velocitySecs.toFixed(1)}s${entry.solVolume > 0 ? ' / ' + entry.solVolume.toFixed(3) + '◎' : ''} → BUYING`);
   renderWatchCards();
   executeBuy(entry.ev, {
-    mcapSol:      entry.ev.marketCapSol || 0,
+    mcapSol:      entry.currentMcap || entry.ev.marketCapSol || 0,
     poolSol:      entry.ev.solInPool    || 0,
     buys:         entry.buyCount,
     buyers:       entry.uniqueBuyers.size,
