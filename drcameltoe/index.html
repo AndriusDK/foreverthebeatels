@@ -916,8 +916,9 @@ function handleWatchUpdate(ev) {
       buyers:       entry.uniqueBuyers.size,
       velocitySecs: +elapsed.toFixed(1),
       solVol:       +entry.solVolume.toFixed(4),
-      curveDip:     +dipPct.toFixed(1),
-      curveRecover: +recoverPct.toFixed(1),
+      curveDip:      +dipPct.toFixed(1),
+      curveRecover:  +recoverPct.toFixed(1),
+      entryFromPeak: entry.localHigh > 0 ? +((entry.localHigh - entry.currentPrice) / entry.localHigh * 100).toFixed(1) : 0,
     });
     return;
   }
@@ -964,7 +965,8 @@ function handleWatchUpdate(ev) {
     buyers:       entry.uniqueBuyers.size,
     velocitySecs: +velocitySecs.toFixed(1),
     solVol:       +entry.solVolume.toFixed(4),
-    pumpPct:      +pumpPct.toFixed(1),
+    pumpPct:       +pumpPct.toFixed(1),
+    entryFromPeak: entry.localHigh > 0 ? +((entry.localHigh - entry.currentPrice) / entry.localHigh * 100).toFixed(1) : 0,
   });
 }
 
@@ -1450,8 +1452,9 @@ function buildEntryStatsHtml(s) {
   if (s.velocitySecs != null) rows.push(`<div class="card-row"><span class="lbl">FILL SPEED</span><span>${s.velocitySecs}s</span></div>`);
   if (s.solVol   != null && s.solVol > 0) rows.push(`<div class="card-row"><span class="lbl">WATCH VOL</span><span>${s.solVol.toFixed(3)} SOL</span></div>`);
   if (s.pumpPct  != null) rows.push(`<div class="card-row"><span class="lbl">PUMP BEFORE BUY</span><span class="${s.pumpPct>=0?'pos':'neg'}">${s.pumpPct>=0?'+':''}${s.pumpPct}%</span></div>`);
-  if (s.curveDip     != null) rows.push(`<div class="card-row"><span class="lbl">CURVE DIP</span><span class="neg">-${s.curveDip}%</span></div>`);
-  if (s.curveRecover != null) rows.push(`<div class="card-row"><span class="lbl">CURVE RECOVER</span><span class="pos">+${s.curveRecover}%</span></div>`);
+  if (s.curveDip      != null) rows.push(`<div class="card-row"><span class="lbl">CURVE DIP</span><span class="neg">-${s.curveDip}%</span></div>`);
+  if (s.curveRecover  != null) rows.push(`<div class="card-row"><span class="lbl">CURVE RECOVER</span><span class="pos">+${s.curveRecover}%</span></div>`);
+  if (s.entryFromPeak != null) rows.push(`<div class="card-row"><span class="lbl">ENTRY FROM PEAK</span><span class="neg">-${s.entryFromPeak}%</span></div>`);
   if (!rows.length) return '';
   return `<hr class="card-hr"><div style="font-size:8px;letter-spacing:1px;color:var(--grey);margin-bottom:3px">ENTRY STATS</div>${rows.join('')}`;
 }
