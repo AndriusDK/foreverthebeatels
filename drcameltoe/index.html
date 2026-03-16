@@ -992,6 +992,7 @@ function handleReclaimUpdate(ev) {
   if (!entry || !price) return;
 
   if (price < entry.lowestPrice) entry.lowestPrice = price;
+  entry.currentPrice = price;
 
   const dumpPct = entry.exitPrice > 0 ? (entry.exitPrice - entry.lowestPrice) / entry.exitPrice * 100 : 0;
 
@@ -1050,10 +1051,12 @@ function buildReclaimCard(entry, mint) {
   const pct      = cfg.reclaimWindowSecs > 0 ? Math.min(elapsed / cfg.reclaimWindowSecs * 100, 100) : 100;
   const timeLeft = Math.max(0, cfg.reclaimWindowSecs - Math.floor(elapsed));
   const dumpPct  = entry.exitPrice > 0 ? ((entry.exitPrice - entry.lowestPrice) / entry.exitPrice * 100).toFixed(1) : '0.0';
-  const recoverPct = entry.lowestPrice > 0 ? ((entry.lowestPrice > 0 ? (entry.lowestPrice / entry.lowestPrice - 1) * 100 : 0)).toFixed(1) : '0.0';
-  const buysHit  = entry.buyCount >= cfg.reclaimMinBuys;
-  const buyrsHit = entry.uniqueBuyers.size >= cfg.reclaimMinBuyers;
-  const dexUrl   = `https://dexscreener.com/solana/${entry.poolId}${cfg.publicKey ? '?maker=' + cfg.publicKey : ''}`;
+  const curP     = entry.currentPrice || entry.lowestPrice;
+  const recoverPct = entry.lowestPrice > 0 ? ((curP - entry.lowestPrice) / entry.lowestPrice * 100).toFixed(1) : '0.0';
+  const buysHit    = entry.buyCount >= cfg.reclaimMinBuys;
+  const buyrsHit   = entry.uniqueBuyers.size >= cfg.reclaimMinBuyers;
+  const recHit     = parseFloat(recoverPct) >= cfg.reclaimMinRecoverPct;
+  const dexUrl     = `https://dexscreener.com/solana/${entry.poolId}${cfg.publicKey ? '?maker=' + cfg.publicKey : ''}`;
 
   const card = document.createElement('div');
   card.className = 'card reclaiming reclaim-card';
@@ -1070,9 +1073,12 @@ function buildReclaimCard(entry, mint) {
     </div>
     <div class="reclaim-bar-wrap"><div class="reclaim-bar" id="rcbar-${mint}" style="width:${pct}%"></div></div>
     <div class="watch-stat" id="rcstat-${mint}">
-      <span>${entry.dumpConfirmed ? `DUMP:-${dumpPct}%` : `WAIT DUMP (-${cfg.reclaimMinDumpPct}%)`}</span>
-      ${entry.dumpConfirmed ? `<span class="${buysHit?'hit':''}">B:${entry.buyCount}/${cfg.reclaimMinBuys}</span>` : ''}
-      ${entry.dumpConfirmed ? `<span class="${buyrsHit?'hit':''}">U:${entry.uniqueBuyers.size}/${cfg.reclaimMinBuyers}</span>` : ''}
+      ${entry.dumpConfirmed
+        ? `<span class="hit">DUMP:-${dumpPct}%</span>
+           <span class="${recHit?'hit':''}">REC:+${recoverPct}%/+${cfg.reclaimMinRecoverPct}%</span>
+           <span class="${buysHit?'hit':''}">B:${entry.buyCount}/${cfg.reclaimMinBuys}</span>
+           <span class="${buyrsHit?'hit':''}">U:${entry.uniqueBuyers.size}/${cfg.reclaimMinBuyers}</span>`
+        : `<span>WAIT DUMP (-${cfg.reclaimMinDumpPct}%) cur:-${dumpPct}%</span>`}
     </div>
     <a class="dex-link" href="${dexUrl}" target="_blank">⟶ DEXSCREENER</a>`;
   return card;
@@ -1084,9 +1090,12 @@ function updateReclaimCard(mint, entry) {
   const elapsed  = (Date.now() - entry.startedAt) / 1000;
   const pct      = Math.min(elapsed / cfg.reclaimWindowSecs * 100, 100);
   const timeLeft = Math.max(0, cfg.reclaimWindowSecs - Math.floor(elapsed));
-  const dumpPct  = entry.exitPrice > 0 ? ((entry.exitPrice - entry.lowestPrice) / entry.exitPrice * 100).toFixed(1) : '0.0';
-  const buysHit  = entry.buyCount >= cfg.reclaimMinBuys;
-  const buyrsHit = entry.uniqueBuyers.size >= cfg.reclaimMinBuyers;
+  const dumpPct    = entry.exitPrice > 0 ? ((entry.exitPrice - entry.lowestPrice) / entry.exitPrice * 100).toFixed(1) : '0.0';
+  const curP       = entry.currentPrice || entry.lowestPrice;
+  const recoverPct = entry.lowestPrice > 0 ? ((curP - entry.lowestPrice) / entry.lowestPrice * 100).toFixed(1) : '0.0';
+  const buysHit    = entry.buyCount >= cfg.reclaimMinBuys;
+  const buyrsHit   = entry.uniqueBuyers.size >= cfg.reclaimMinBuyers;
+  const recHit     = parseFloat(recoverPct) >= cfg.reclaimMinRecoverPct;
 
   const bar = document.getElementById('rcbar-' + mint);
   if (bar) bar.style.width = pct + '%';
@@ -1094,10 +1103,12 @@ function updateReclaimCard(mint, entry) {
   card.querySelector('.card-top > div:last-child').textContent = `RECLAIM ${timeLeft}s`;
 
   const stats = document.getElementById('rcstat-' + mint);
-  if (stats) stats.innerHTML = `
-    <span>${entry.dumpConfirmed ? `DUMP:-${dumpPct}%` : `WAIT DUMP (-${cfg.reclaimMinDumpPct}%)`}</span>
-    ${entry.dumpConfirmed ? `<span class="${buysHit?'hit':''}">B:${entry.buyCount}/${cfg.reclaimMinBuys}</span>` : ''}
-    ${entry.dumpConfirmed ? `<span class="${buyrsHit?'hit':''}">U:${entry.uniqueBuyers.size}/${cfg.reclaimMinBuyers}</span>` : ''}`;
+  if (stats) stats.innerHTML = entry.dumpConfirmed
+    ? `<span class="hit">DUMP:-${dumpPct}%</span>
+       <span class="${recHit?'hit':''}">REC:+${recoverPct}%/+${cfg.reclaimMinRecoverPct}%</span>
+       <span class="${buysHit?'hit':''}">B:${entry.buyCount}/${cfg.reclaimMinBuys}</span>
+       <span class="${buyrsHit?'hit':''}">U:${entry.uniqueBuyers.size}/${cfg.reclaimMinBuyers}</span>`
+    : `<span>WAIT DUMP (-${cfg.reclaimMinDumpPct}%) cur:-${dumpPct}%</span>`;
 }
 
 // ═══════════════════════════════════════════════
@@ -1599,7 +1610,7 @@ function buildCard(pos, mint) {
   card.innerHTML = `
     <div class="card-top">
       <div>
-        <div class="card-name">${pos.name.slice(0,12).toUpperCase()}${pos.paper ? ' <span style="font-size:8px;background:#ff9800;color:#000;padding:1px 4px;border-radius:2px;vertical-align:middle">PAPER</span>' : ''}</div>
+        <div class="card-name">${pos.name.slice(0,12).toUpperCase()}${pos.paper ? ' <span style="font-size:8px;background:#ff9800;color:#000;padding:1px 4px;border-radius:2px;vertical-align:middle">PAPER</span>' : ''}${pos.entryStats?.reclaimDump != null ? ' <span style="font-size:8px;background:var(--magenta);color:#000;padding:1px 4px;border-radius:2px;vertical-align:middle">RECLAIM</span>' : ''}</div>
         <div class="card-pool">[${pos.pool}]</div>
       </div>
       <div style="text-align:right">
