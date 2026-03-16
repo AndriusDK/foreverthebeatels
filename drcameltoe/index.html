@@ -442,6 +442,7 @@
         <div class="field"><label>MIN DIP FROM PEAK %</label><input type="number" id="s-curveDipPct" value="8" min="1" oninput="save('curveDipPct',+this.value)"></div>
         <div class="field"><label>MIN RECOVER FROM LOW %</label><input type="number" id="s-curveRecoverPct" value="5" min="1" oninput="save('curveRecoverPct',+this.value)"></div>
       </div>
+      <div class="field"><label>MAX DIP FROM PEAK % (0=off)</label><input type="number" id="s-curveMaxDipPct" value="0" min="0" oninput="save('curveMaxDipPct',+this.value)"></div>
     </div>
 
     <button id="start-btn" onclick="toggleBot()">▶ START BOT</button>
@@ -513,7 +514,7 @@ const DEFAULTS = {
   watchMinVelocitySecs:2, watchMaxVelocitySecs:30, watchMinSolVol:0, watchMinPumpPct:0, watchMaxPumpPct:90,
   watchBotPumpPct:50, watchBotFillSecs:3,
   symCooldownEnabled:true, symCooldownSecs:300,
-  curveEnabled:false, curveObserveSecs:15, curveDipPct:8, curveRecoverPct:5,
+  curveEnabled:false, curveObserveSecs:15, curveDipPct:8, curveRecoverPct:5, curveMaxDipPct:0,
 };
 
 let cfg = { ...DEFAULTS };
@@ -536,7 +537,7 @@ function applyToUI() {
    'flatlineSeconds','flatlinePct','scaleOutTp1Pct','scaleOutSellPct',
    'watchSeconds','watchMinBuys','watchMinBuyers','watchMinVelocitySecs','watchMaxVelocitySecs','watchMinSolVol','watchMinPumpPct','watchMaxPumpPct','watchBotPumpPct','watchBotFillSecs',
    'symCooldownSecs',
-   'curveObserveSecs','curveDipPct','curveRecoverPct'].forEach(k => {
+   'curveObserveSecs','curveDipPct','curveRecoverPct','curveMaxDipPct'].forEach(k => {
     const el = document.getElementById('s-'+k);
     if (el) el.value = cfg[k];
   });
@@ -903,6 +904,10 @@ function handleWatchUpdate(ev) {
 
     if (dipPct < cfg.curveDipPct) return;       // no consolidation yet
     if (recoverPct < cfg.curveRecoverPct) return; // still in the dip
+    if (cfg.curveMaxDipPct > 0 && dipPct > cfg.curveMaxDipPct) {
+      addLog('skip', `SKIP ${tag} — dip ${dipPct.toFixed(1)}% > max ${cfg.curveMaxDipPct}%`);
+      clearTimeout(entry.timer); watchlist.delete(mint); renderWatchCards(); return;
+    }
 
     // Curve confirmed — buy
     clearTimeout(entry.timer);
