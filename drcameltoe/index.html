@@ -178,10 +178,6 @@
     .card.loss   { border-color: var(--red);   box-shadow: 0 0 7px rgba(255,51,102,.25); }
     .card.watching { border-color: var(--amber); box-shadow: 0 0 7px rgba(255,184,0,.2); }
     .card.watching .card-name { color: var(--amber); }
-    .card.reclaiming { border-color: var(--magenta); box-shadow: 0 0 7px rgba(255,0,170,.2); }
-    .card.reclaiming .card-name { color: var(--magenta); }
-    .reclaim-bar-wrap { background: var(--bg3); height: 4px; margin-top: 6px; }
-    .reclaim-bar { height: 4px; background: var(--magenta); transition: width .5s linear; box-shadow: 0 0 6px var(--magenta); }
     .card.closed { opacity: .55; border-color: var(--grey); box-shadow: none; }
     .card.closed .card-name { color: var(--grey); }
     .watch-bar-wrap { background: var(--bg3); height: 4px; margin-top: 6px; }
@@ -435,20 +431,16 @@
       <div class="field"><label>COOLDOWN AFTER TRADE (SEC)</label><input type="number" id="s-symCooldownSecs" value="300" min="10" oninput="save('symCooldownSecs',+this.value)"></div>
     </div>
 
-    <div class="sec-head" onclick="toggleSec(this)">RECLAIM (RE-ENTRY AFTER DUMP) <span>▾</span></div>
+    <div class="sec-head" onclick="toggleSec(this)">CURVE QUALITY (DIP+RECOVERY) <span>▾</span></div>
     <div class="sec-body">
       <div class="tog-wrap">
         <label>ENABLED</label>
-        <label class="tog"><input type="checkbox" id="s-reclaimEnabled" onchange="save('reclaimEnabled',this.checked)"><span class="tog-sl"></span></label>
+        <label class="tog"><input type="checkbox" id="s-curveEnabled" onchange="save('curveEnabled',this.checked)"><span class="tog-sl"></span></label>
       </div>
-      <div class="field"><label>WATCH WINDOW (SEC)</label><input type="number" id="s-reclaimWindowSecs" value="120" min="10" oninput="save('reclaimWindowSecs',+this.value)"></div>
+      <div class="field"><label>OBSERVE FIRST (SEC)</label><input type="number" id="s-curveObserveSecs" value="15" min="1" oninput="save('curveObserveSecs',+this.value)"></div>
       <div class="row2">
-        <div class="field"><label>MIN DUMP % FROM EXIT</label><input type="number" id="s-reclaimMinDumpPct" value="10" min="1" oninput="save('reclaimMinDumpPct',+this.value)"></div>
-        <div class="field"><label>MIN RECOVER % FROM LOW</label><input type="number" id="s-reclaimMinRecoverPct" value="5" min="1" oninput="save('reclaimMinRecoverPct',+this.value)"></div>
-      </div>
-      <div class="row2">
-        <div class="field"><label>MIN BUYS</label><input type="number" id="s-reclaimMinBuys" value="3" min="1" oninput="save('reclaimMinBuys',+this.value)"></div>
-        <div class="field"><label>MIN BUYERS</label><input type="number" id="s-reclaimMinBuyers" value="3" min="1" oninput="save('reclaimMinBuyers',+this.value)"></div>
+        <div class="field"><label>MIN DIP FROM PEAK %</label><input type="number" id="s-curveDipPct" value="8" min="1" oninput="save('curveDipPct',+this.value)"></div>
+        <div class="field"><label>MIN RECOVER FROM LOW %</label><input type="number" id="s-curveRecoverPct" value="5" min="1" oninput="save('curveRecoverPct',+this.value)"></div>
       </div>
     </div>
 
@@ -521,7 +513,7 @@ const DEFAULTS = {
   watchMinVelocitySecs:2, watchMaxVelocitySecs:30, watchMinSolVol:0, watchMinPumpPct:0, watchMaxPumpPct:90,
   watchBotPumpPct:50, watchBotFillSecs:3,
   symCooldownEnabled:true, symCooldownSecs:300,
-  reclaimEnabled:false, reclaimWindowSecs:120, reclaimMinDumpPct:10, reclaimMinRecoverPct:5, reclaimMinBuys:3, reclaimMinBuyers:3,
+  curveEnabled:false, curveObserveSecs:15, curveDipPct:8, curveRecoverPct:5,
 };
 
 let cfg = { ...DEFAULTS };
@@ -544,13 +536,13 @@ function applyToUI() {
    'flatlineSeconds','flatlinePct','scaleOutTp1Pct','scaleOutSellPct',
    'watchSeconds','watchMinBuys','watchMinBuyers','watchMinVelocitySecs','watchMaxVelocitySecs','watchMinSolVol','watchMinPumpPct','watchMaxPumpPct','watchBotPumpPct','watchBotFillSecs',
    'symCooldownSecs',
-   'reclaimWindowSecs','reclaimMinDumpPct','reclaimMinRecoverPct','reclaimMinBuys','reclaimMinBuyers'].forEach(k => {
+   'curveObserveSecs','curveDipPct','curveRecoverPct'].forEach(k => {
     const el = document.getElementById('s-'+k);
     if (el) el.value = cfg[k];
   });
   const feeEl = document.getElementById('s-priorityFee');
   if (feeEl) feeEl.value = cfg.priorityFee;
-  ['testMode','scamFilter','tpEnabled','slEnabled','trailEnabled','timerEnabled','flatlineEnabled','scaleOutEnabled','watchEnabled','symCooldownEnabled','reclaimEnabled'].forEach(k => {
+  ['testMode','scamFilter','tpEnabled','slEnabled','trailEnabled','timerEnabled','flatlineEnabled','scaleOutEnabled','watchEnabled','symCooldownEnabled','curveEnabled'].forEach(k => {
     const el = document.getElementById('s-'+k);
     if (el) el.checked = cfg[k];
   });
@@ -597,7 +589,6 @@ function toggleKey() {
 let positions       = new Map();   // mint → open pos
 let closedPositions = new Map();   // mint → closed pos (kept for display)
 let watchlist       = new Map();   // mint → observation entry
-let reclaimWatchlist = new Map();  // mint → reclaim entry (post-SL dump recovery)
 let recentSymbols   = new Map();   // normalised symbol → last trade timestamp
 let closedTrades    = [];
 let session = newSession();
@@ -725,7 +716,6 @@ function handleEvent(ev) {
   if (txType === 'buy' || txType === 'sell') {
     if (positions.has(mint))       handlePriceUpdate(ev);
     if (watchlist.has(mint))       handleWatchUpdate(ev);
-    if (reclaimWatchlist.has(mint)) handleReclaimUpdate(ev);
   }
 }
 
@@ -824,6 +814,8 @@ function handleCreate(ev) {
     currentPrice: price || 0,
     initialMcap:  marketCapSol || 0,
     currentMcap:  marketCapSol || 0,
+    localHigh:    price || 0,
+    localLow:     price || 0,
     buyCount:     0,
     uniqueBuyers: new Set(),
     solVolume:    0,
@@ -851,6 +843,8 @@ function handleWatchUpdate(ev) {
 
   if (price) {
     entry.currentPrice = price;
+    if (price > entry.localHigh) { entry.localHigh = price; entry.localLow = price; }
+    else if (price < entry.localLow) entry.localLow = price;
     if (entry.initialPrice > 0 && entry.initialMcap > 0)
       entry.currentMcap = entry.initialMcap * (price / entry.initialPrice);
   }
@@ -863,16 +857,76 @@ function handleWatchUpdate(ev) {
     }
   }
 
-  // Update watch card
   updateWatchCard(mint, entry);
 
-  // Check count conditions first
+  const tag     = entry.symbol.toUpperCase();
+  const elapsed = (Date.now() - entry.startedAt) / 1000;
+
+  // Hard kills — apply in all modes
+  if (cfg.maxMcap > 0 && entry.currentMcap > 0 && entry.currentMcap > cfg.maxMcap) {
+    clearTimeout(entry.timer);
+    watchlist.delete(mint);
+    addLog('skip', `SKIP ${tag} — mcap grew to ${entry.currentMcap.toFixed(1)} > max ${cfg.maxMcap}`);
+    renderWatchCards();
+    return;
+  }
+
+  if (entry.initialPrice > 0) {
+    const pumpPct = (entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100;
+    if (cfg.watchMaxPumpPct > 0 && pumpPct > cfg.watchMaxPumpPct) {
+      clearTimeout(entry.timer);
+      watchlist.delete(mint);
+      addLog('skip', `PUMPED ${tag} — already +${pumpPct.toFixed(0)}% (max ${cfg.watchMaxPumpPct}%) → SKIP`);
+      renderWatchCards();
+      return;
+    }
+    if (cfg.watchBotPumpPct > 0 && cfg.watchBotFillSecs > 0 && pumpPct >= cfg.watchBotPumpPct && elapsed <= cfg.watchBotFillSecs) {
+      clearTimeout(entry.timer);
+      watchlist.delete(mint);
+      addLog('skip', `BOT SPIKE ${tag} — +${pumpPct.toFixed(0)}% in ${elapsed.toFixed(1)}s → SKIP`);
+      renderWatchCards();
+      return;
+    }
+  }
+
+  // ── CURVE MODE ──────────────────────────────────────────────
+  if (cfg.curveEnabled) {
+    // Phase 1: pure observation — just collect data
+    if (elapsed < cfg.curveObserveSecs) return;
+
+    // Phase 2: need minimum buyer activity
+    if (entry.buyCount < cfg.watchMinBuys || entry.uniqueBuyers.size < cfg.watchMinBuyers) return;
+
+    // Curve check: token must have formed a peak, dipped, and recovered
+    const dipPct     = entry.localHigh > 0 ? (entry.localHigh - entry.localLow) / entry.localHigh * 100 : 0;
+    const recoverPct = entry.localLow  > 0 ? (entry.currentPrice - entry.localLow) / entry.localLow * 100 : 0;
+
+    if (dipPct < cfg.curveDipPct) return;       // no consolidation yet
+    if (recoverPct < cfg.curveRecoverPct) return; // still in the dip
+
+    // Curve confirmed — buy
+    clearTimeout(entry.timer);
+    watchlist.delete(mint);
+    addLog('buy', `CURVE ${tag} — dip:-${dipPct.toFixed(1)}% rec:+${recoverPct.toFixed(1)}% (${entry.buyCount}b/${entry.uniqueBuyers.size}u/${elapsed.toFixed(1)}s) → BUYING`);
+    renderWatchCards();
+    executeBuy(entry.ev, {
+      mcapSol:      entry.currentMcap || entry.ev.marketCapSol || 0,
+      poolSol:      entry.ev.solInPool || 0,
+      buys:         entry.buyCount,
+      buyers:       entry.uniqueBuyers.size,
+      velocitySecs: +elapsed.toFixed(1),
+      solVol:       +entry.solVolume.toFixed(4),
+      curveDip:     +dipPct.toFixed(1),
+      curveRecover: +recoverPct.toFixed(1),
+    });
+    return;
+  }
+
+  // ── STANDARD MODE ───────────────────────────────────────────
   if (entry.buyCount < cfg.watchMinBuys || entry.uniqueBuyers.size < cfg.watchMinBuyers) return;
 
-  const tag          = entry.symbol.toUpperCase();
-  const velocitySecs = (Date.now() - entry.startedAt) / 1000;
+  const velocitySecs = elapsed;
 
-  // Velocity filter — too fast means bots/snipers, too slow means cold momentum
   if (cfg.watchMinVelocitySecs > 0 && velocitySecs < cfg.watchMinVelocitySecs) {
     clearTimeout(entry.timer);
     watchlist.delete(mint);
@@ -889,62 +943,15 @@ function handleWatchUpdate(ev) {
     return;
   }
 
-  // Mcap below min — wait silently until it grows
   if (cfg.minMcap > 0 && entry.currentMcap > 0 && entry.currentMcap < cfg.minMcap) return;
 
-  // Mcap above max during observation — kill
-  if (cfg.maxMcap > 0 && entry.currentMcap > 0 && entry.currentMcap > cfg.maxMcap) {
-    clearTimeout(entry.timer);
-    watchlist.delete(mint);
-    addLog('skip', `SKIP ${tag} — mcap grew to ${entry.currentMcap.toFixed(1)} > max ${cfg.maxMcap}`);
-    renderWatchCards();
-    return;
-  }
-
-  // Not pumped enough yet — wait silently for more price action
   if (cfg.watchMinPumpPct > 0 && entry.initialPrice > 0) {
     const pumpPct = (entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100;
     if (pumpPct < cfg.watchMinPumpPct) return;
   }
 
-  // Already pumped — buying the top
-  if (cfg.watchMaxPumpPct > 0 && entry.initialPrice > 0) {
-    const pumpPct = (entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100;
-    if (pumpPct > cfg.watchMaxPumpPct) {
-      clearTimeout(entry.timer);
-      watchlist.delete(mint);
-      if (cfg.reclaimEnabled) {
-        addLog('sys', `PUMPED ${tag} — +${pumpPct.toFixed(0)}% → RECLAIM WATCH for dump+recovery`);
-        addToReclaimWatchlist({ mint, name: entry.name, symbol: entry.symbol, pool: entry.pool, poolId: entry.ev.poolId, currentPrice: entry.currentPrice });
-      } else {
-        addLog('skip', `PUMPED ${tag} — already +${pumpPct.toFixed(0)}% (max ${cfg.watchMaxPumpPct}%) → SKIP`);
-      }
-      renderWatchCards();
-      return;
-    }
-  }
-
-  // Bot spike combo — high pump AND suspiciously fast fill = bot-driven top, skip
-  if (cfg.watchBotPumpPct > 0 && cfg.watchBotFillSecs > 0 && entry.initialPrice > 0) {
-    const pumpPct = (entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100;
-    if (pumpPct >= cfg.watchBotPumpPct && velocitySecs <= cfg.watchBotFillSecs) {
-      clearTimeout(entry.timer);
-      watchlist.delete(mint);
-      if (cfg.reclaimEnabled) {
-        addLog('sys', `BOT SPIKE ${tag} — +${pumpPct.toFixed(0)}% in ${velocitySecs.toFixed(1)}s → RECLAIM WATCH`);
-        addToReclaimWatchlist({ mint, name: entry.name, symbol: entry.symbol, pool: entry.pool, poolId: entry.ev.poolId, currentPrice: entry.currentPrice });
-      } else {
-        addLog('skip', `BOT SPIKE ${tag} — +${pumpPct.toFixed(0)}% in ${velocitySecs.toFixed(1)}s → SKIP`);
-      }
-      renderWatchCards();
-      return;
-    }
-  }
-
-  // SOL volume — wait silently until threshold reached (don't fire yet)
   if (cfg.watchMinSolVol > 0 && entry.solVolume < cfg.watchMinSolVol) return;
 
-  // All conditions met — buy
   clearTimeout(entry.timer);
   watchlist.delete(mint);
   const pumpPct = entry.initialPrice > 0 ? (entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100 : 0;
@@ -961,165 +968,6 @@ function handleWatchUpdate(ev) {
   });
 }
 
-// ═══════════════════════════════════════════════
-//  RECLAIM — post-SL dump+recovery re-entry
-// ═══════════════════════════════════════════════
-function addToReclaimWatchlist(pos) {
-  const mint = pos.mint;
-  if (reclaimWatchlist.has(mint)) return;
-  const tag = (pos.symbol || pos.name || '').toUpperCase();
-  const entry = {
-    mint,
-    name:          pos.name,
-    symbol:        pos.symbol || '?',
-    pool:          pos.pool   || '?',
-    poolId:        pos.poolId || mint,
-    exitPrice:     pos.currentPrice,
-    lowestPrice:   pos.currentPrice,
-    dumpConfirmed: false,
-    buyCount:      0,
-    uniqueBuyers:  new Set(),
-    solVolume:     0,
-    startedAt:     Date.now(),
-    timer:         null,
-    ev: { mint, name: pos.name, symbol: pos.symbol, pool: pos.pool, poolId: pos.poolId, price: pos.currentPrice },
-  };
-  entry.timer = setTimeout(() => {
-    if (reclaimWatchlist.has(mint)) {
-      reclaimWatchlist.delete(mint);
-      addLog('skip', `RECLAIM EXPIRED ${tag} — window closed`);
-      renderReclaimCards();
-    }
-  }, cfg.reclaimWindowSecs * 1000);
-  reclaimWatchlist.set(mint, entry);
-  addLog('sys', `RECLAIM WATCH ${tag} — watching for dump+recovery (${cfg.reclaimWindowSecs}s)`);
-  renderReclaimCards();
-}
-
-function handleReclaimUpdate(ev) {
-  const { mint, txType, price, tradersInvolved, solAmount, quoteAmount } = ev;
-  const entry = reclaimWatchlist.get(mint);
-  if (!entry || !price) return;
-
-  if (price < entry.lowestPrice) entry.lowestPrice = price;
-  entry.currentPrice = price;
-
-  const dumpPct = entry.exitPrice > 0 ? (entry.exitPrice - entry.lowestPrice) / entry.exitPrice * 100 : 0;
-
-  // Confirm the dump happened
-  if (!entry.dumpConfirmed && dumpPct >= cfg.reclaimMinDumpPct) {
-    entry.dumpConfirmed = true;
-    entry.buyCount      = 0;
-    entry.uniqueBuyers  = new Set();
-    entry.solVolume     = 0;
-    const tag = entry.symbol.toUpperCase();
-    addLog('sys', `RECLAIM DUMP ${tag} — -${dumpPct.toFixed(1)}% from exit, watching for recovery...`);
-  }
-
-  if (!entry.dumpConfirmed) { updateReclaimCard(mint, entry); return; }
-
-  // Count buys after dump confirmed
-  if (txType === 'buy') {
-    entry.buyCount++;
-    entry.solVolume += (solAmount || quoteAmount || 0);
-    if (tradersInvolved) {
-      Object.keys(tradersInvolved).forEach(addr => entry.uniqueBuyers.add(addr));
-    }
-  }
-
-  updateReclaimCard(mint, entry);
-
-  if (entry.buyCount < cfg.reclaimMinBuys || entry.uniqueBuyers.size < cfg.reclaimMinBuyers) return;
-
-  const recoverPct = entry.lowestPrice > 0 ? (price - entry.lowestPrice) / entry.lowestPrice * 100 : 0;
-  if (recoverPct < cfg.reclaimMinRecoverPct) return;
-
-  // Max positions guard
-  if (positions.size >= cfg.maxPositions) return;
-
-  // Cooldown guard
-  if (Date.now() - lastBuyTime < cfg.cooldown * 1000) return;
-
-  // All conditions met — re-enter
-  clearTimeout(entry.timer);
-  reclaimWatchlist.delete(mint);
-  const tag = entry.symbol.toUpperCase();
-  addLog('buy', `RECLAIM ${tag} — dumped -${dumpPct.toFixed(1)}% then recovered +${recoverPct.toFixed(1)}% (${entry.buyCount}b/${entry.uniqueBuyers.size}u) → BUYING`);
-  renderReclaimCards();
-  executeBuy(entry.ev, {
-    mcapSol:        0,
-    poolSol:        0,
-    buys:           entry.buyCount,
-    buyers:         entry.uniqueBuyers.size,
-    reclaimDump:    +dumpPct.toFixed(1),
-    reclaimRecover: +recoverPct.toFixed(1),
-  });
-}
-
-function buildReclaimCard(entry, mint) {
-  const elapsed  = (Date.now() - entry.startedAt) / 1000;
-  const pct      = cfg.reclaimWindowSecs > 0 ? Math.min(elapsed / cfg.reclaimWindowSecs * 100, 100) : 100;
-  const timeLeft = Math.max(0, cfg.reclaimWindowSecs - Math.floor(elapsed));
-  const dumpPct  = entry.exitPrice > 0 ? ((entry.exitPrice - entry.lowestPrice) / entry.exitPrice * 100).toFixed(1) : '0.0';
-  const curP     = entry.currentPrice || entry.lowestPrice;
-  const recoverPct = entry.lowestPrice > 0 ? ((curP - entry.lowestPrice) / entry.lowestPrice * 100).toFixed(1) : '0.0';
-  const buysHit    = entry.buyCount >= cfg.reclaimMinBuys;
-  const buyrsHit   = entry.uniqueBuyers.size >= cfg.reclaimMinBuyers;
-  const recHit     = parseFloat(recoverPct) >= cfg.reclaimMinRecoverPct;
-  const dexUrl     = `https://dexscreener.com/solana/${entry.poolId}${cfg.publicKey ? '?maker=' + cfg.publicKey : ''}`;
-
-  const card = document.createElement('div');
-  card.className = 'card reclaiming reclaim-card';
-  card.id = 'rccard-' + mint;
-  card.innerHTML = `
-    <div class="card-top">
-      <div>
-        <div class="card-name">${entry.name.slice(0,12).toUpperCase()}</div>
-        <div class="card-pool">[${entry.pool}]</div>
-      </div>
-      <div style="text-align:right;font-size:9px;color:var(--magenta)">
-        RECLAIM ${timeLeft}s
-      </div>
-    </div>
-    <div class="reclaim-bar-wrap"><div class="reclaim-bar" id="rcbar-${mint}" style="width:${pct}%"></div></div>
-    <div class="watch-stat" id="rcstat-${mint}">
-      ${entry.dumpConfirmed
-        ? `<span class="hit">DUMP:-${dumpPct}%</span>
-           <span class="${recHit?'hit':''}">REC:+${recoverPct}%/+${cfg.reclaimMinRecoverPct}%</span>
-           <span class="${buysHit?'hit':''}">B:${entry.buyCount}/${cfg.reclaimMinBuys}</span>
-           <span class="${buyrsHit?'hit':''}">U:${entry.uniqueBuyers.size}/${cfg.reclaimMinBuyers}</span>`
-        : `<span>WAIT DUMP (-${cfg.reclaimMinDumpPct}%) cur:-${dumpPct}%</span>`}
-    </div>
-    <a class="dex-link" href="${dexUrl}" target="_blank">⟶ DEXSCREENER</a>`;
-  return card;
-}
-
-function updateReclaimCard(mint, entry) {
-  const card = document.getElementById('rccard-' + mint);
-  if (!card) return;
-  const elapsed  = (Date.now() - entry.startedAt) / 1000;
-  const pct      = Math.min(elapsed / cfg.reclaimWindowSecs * 100, 100);
-  const timeLeft = Math.max(0, cfg.reclaimWindowSecs - Math.floor(elapsed));
-  const dumpPct    = entry.exitPrice > 0 ? ((entry.exitPrice - entry.lowestPrice) / entry.exitPrice * 100).toFixed(1) : '0.0';
-  const curP       = entry.currentPrice || entry.lowestPrice;
-  const recoverPct = entry.lowestPrice > 0 ? ((curP - entry.lowestPrice) / entry.lowestPrice * 100).toFixed(1) : '0.0';
-  const buysHit    = entry.buyCount >= cfg.reclaimMinBuys;
-  const buyrsHit   = entry.uniqueBuyers.size >= cfg.reclaimMinBuyers;
-  const recHit     = parseFloat(recoverPct) >= cfg.reclaimMinRecoverPct;
-
-  const bar = document.getElementById('rcbar-' + mint);
-  if (bar) bar.style.width = pct + '%';
-
-  card.querySelector('.card-top > div:last-child').textContent = `RECLAIM ${timeLeft}s`;
-
-  const stats = document.getElementById('rcstat-' + mint);
-  if (stats) stats.innerHTML = entry.dumpConfirmed
-    ? `<span class="hit">DUMP:-${dumpPct}%</span>
-       <span class="${recHit?'hit':''}">REC:+${recoverPct}%/+${cfg.reclaimMinRecoverPct}%</span>
-       <span class="${buysHit?'hit':''}">B:${entry.buyCount}/${cfg.reclaimMinBuys}</span>
-       <span class="${buyrsHit?'hit':''}">U:${entry.uniqueBuyers.size}/${cfg.reclaimMinBuyers}</span>`
-    : `<span>WAIT DUMP (-${cfg.reclaimMinDumpPct}%) cur:-${dumpPct}%</span>`;
-}
 
 // ═══════════════════════════════════════════════
 //  BUY
@@ -1367,9 +1215,6 @@ async function executeSell(mint, reason, attempt = 1) {
     addLog(pnl >= 0 ? 'sell' : 'loss', `[PAPER] SOLD ${pos.name} [${reason}] PNL:${fmtPnl(pnl)} (${cfg.paperLatencyPct}% latency adj)`);
     const symKey = (pos.symbol || pos.name || '').toLowerCase().trim();
     if (symKey) recentSymbols.set(symKey, Date.now());
-    if (cfg.reclaimEnabled && pos.currentPrice > 0) {
-      addToReclaimWatchlist(pos);
-    }
     closedTrades.unshift({ name: pos.name, reason, pnl, time: now() });
     if (closedTrades.length > 20) closedTrades.pop();
     pos.closed = true; pos.exitReason = reason; pos.exitPnl = pnl; pos.closedAt = Date.now();
@@ -1427,11 +1272,6 @@ async function executeSell(mint, reason, attempt = 1) {
     const symKey = (pos.symbol || pos.name || '').toLowerCase().trim();
     if (symKey) recentSymbols.set(symKey, Date.now());
 
-    // Reclaim watch — monitor for dump+recovery re-entry after SL/TRAIL
-    if (cfg.reclaimEnabled && pos.currentPrice > 0) {
-      addToReclaimWatchlist(pos);
-    }
-
     closedTrades.unshift({ name:pos.name, reason, pnl, time: now() });
     if (closedTrades.length > 20) closedTrades.pop();
 
@@ -1463,44 +1303,75 @@ async function executeSell(mint, reason, attempt = 1) {
 // ═══════════════════════════════════════════════
 function renderPositions() {
   const grid = document.getElementById('positions-grid');
-  if (positions.size === 0 && closedPositions.size === 0 && watchlist.size === 0 && reclaimWatchlist.size === 0) {
+  if (positions.size === 0 && closedPositions.size === 0 && watchlist.size === 0) {
     grid.innerHTML = '<div id="empty-msg">No active positions.</div>';
     return;
   }
   grid.innerHTML = '';
-  watchlist.forEach((entry, mint)      => grid.appendChild(buildWatchCard(entry, mint)));
-  reclaimWatchlist.forEach((entry, mint) => grid.appendChild(buildReclaimCard(entry, mint)));
-  positions.forEach((pos, mint)        => grid.appendChild(buildCard(pos, mint)));
-  closedPositions.forEach((pos, mint)  => grid.appendChild(buildCard(pos, mint)));
+  watchlist.forEach((entry, mint) => grid.appendChild(buildWatchCard(entry, mint)));
+  positions.forEach((pos, mint)   => grid.appendChild(buildCard(pos, mint)));
+  closedPositions.forEach((pos, mint) => grid.appendChild(buildCard(pos, mint)));
 }
 
 function renderWatchCards() {
-  // Lightweight refresh — rebuild watch + reclaim cards without touching position cards
   const grid = document.getElementById('positions-grid');
   grid.querySelectorAll('.watch-card').forEach(c => c.remove());
-  grid.querySelectorAll('.reclaim-card').forEach(c => c.remove());
   const emptyMsg = document.getElementById('empty-msg');
   if (emptyMsg) emptyMsg.remove();
   const frag = document.createDocumentFragment();
-  watchlist.forEach((entry, mint)       => frag.appendChild(buildWatchCard(entry, mint)));
-  reclaimWatchlist.forEach((entry, mint) => frag.appendChild(buildReclaimCard(entry, mint)));
+  watchlist.forEach((entry, mint) => frag.appendChild(buildWatchCard(entry, mint)));
   grid.prepend(frag);
-  if (positions.size === 0 && closedPositions.size === 0 && watchlist.size === 0 && reclaimWatchlist.size === 0) {
+  if (positions.size === 0 && closedPositions.size === 0 && watchlist.size === 0) {
     grid.innerHTML = '<div id="empty-msg">No active positions.</div>';
   }
 }
 
-function renderReclaimCards() {
-  renderWatchCards();
+function watchCardStats(entry) {
+  const elapsed    = (Date.now() - entry.startedAt) / 1000;
+  const pricePct   = entry.initialPrice > 0 ? ((entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100).toFixed(1) : '0.0';
+  const buysHit    = entry.buyCount >= cfg.watchMinBuys;
+  const buyrsHit   = entry.uniqueBuyers.size >= cfg.watchMinBuyers;
+
+  if (cfg.curveEnabled) {
+    const inObserve  = elapsed < cfg.curveObserveSecs;
+    const dipPct     = entry.localHigh > 0 ? (entry.localHigh - entry.localLow) / entry.localHigh * 100 : 0;
+    const recoverPct = entry.localLow  > 0 ? (entry.currentPrice - entry.localLow) / entry.localLow * 100 : 0;
+    const dipHit     = dipPct >= cfg.curveDipPct;
+    const recHit     = recoverPct >= cfg.curveRecoverPct;
+    if (inObserve) {
+      return `<span class="${buysHit?'hit':''}">BUYS:${entry.buyCount}</span>
+              <span class="${buyrsHit?'hit':''}">U:${entry.uniqueBuyers.size}</span>
+              <span class="${+pricePct>0?'pos':'neg'}">Δ${pricePct}%</span>
+              ${entry.solVolume > 0 ? `<span>VOL:${entry.solVolume.toFixed(3)}◎</span>` : ''}`;
+    }
+    if (!dipHit) {
+      return `<span>WAIT DIP (-${cfg.curveDipPct}%) cur:${dipPct.toFixed(1)}%</span>
+              <span class="${buysHit?'hit':''}">B:${entry.buyCount}/${cfg.watchMinBuys}</span>`;
+    }
+    return `<span class="hit">DIP:-${dipPct.toFixed(1)}%</span>
+            <span class="${recHit?'hit':''}">REC:+${recoverPct.toFixed(1)}%/+${cfg.curveRecoverPct}%</span>
+            <span class="${buysHit?'hit':''}">B:${entry.buyCount}/${cfg.watchMinBuys}</span>
+            <span class="${buyrsHit?'hit':''}">U:${entry.uniqueBuyers.size}/${cfg.watchMinBuyers}</span>`;
+  }
+
+  return `<span class="${buysHit?'hit':''}">BUYS: ${entry.buyCount}/${cfg.watchMinBuys}</span>
+          <span class="${buyrsHit?'hit':''}">BUYERS: ${entry.uniqueBuyers.size}/${cfg.watchMinBuyers}</span>
+          <span class="${+pricePct>0?'pos':'neg'}">Δ${pricePct}%</span>
+          ${entry.solVolume > 0 ? `<span>VOL:${entry.solVolume.toFixed(3)}◎</span>` : ''}`;
+}
+
+function watchCardLabel(entry) {
+  const elapsed  = (Date.now() - entry.startedAt) / 1000;
+  const timeLeft = Math.max(0, cfg.watchSeconds - Math.floor(elapsed));
+  if (cfg.curveEnabled) {
+    return elapsed < cfg.curveObserveSecs ? `OBSERVING ${timeLeft}s` : `CURVE ${timeLeft}s`;
+  }
+  return `WATCHING ${timeLeft}s`;
 }
 
 function buildWatchCard(entry, mint) {
   const elapsed  = (Date.now() - entry.startedAt) / 1000;
   const pct      = cfg.watchSeconds > 0 ? Math.min(elapsed / cfg.watchSeconds * 100, 100) : 100;
-  const buysHit  = entry.buyCount     >= cfg.watchMinBuys;
-  const buyrsHit = entry.uniqueBuyers.size >= cfg.watchMinBuyers;
-  const pricePct = entry.initialPrice > 0 ? ((entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100).toFixed(1) : '0.0';
-  const timeLeft = Math.max(0, cfg.watchSeconds - Math.floor(elapsed));
   const dexUrl   = `https://dexscreener.com/solana/${entry.poolId}${cfg.publicKey ? '?maker=' + cfg.publicKey : ''}`;
 
   const card = document.createElement('div');
@@ -1512,17 +1383,12 @@ function buildWatchCard(entry, mint) {
         <div class="card-name">${entry.name.slice(0,12).toUpperCase()}</div>
         <div class="card-pool">[${entry.pool}]</div>
       </div>
-      <div style="text-align:right;font-size:9px;color:var(--amber)">
-        WATCHING ${timeLeft}s
+      <div style="text-align:right;font-size:9px;color:var(--amber)" id="wlabel-${mint}">
+        ${watchCardLabel(entry)}
       </div>
     </div>
     <div class="watch-bar-wrap"><div class="watch-bar" id="wbar-${mint}" style="width:${pct}%"></div></div>
-    <div class="watch-stat">
-      <span class="${buysHit ? 'hit' : ''}">BUYS: ${entry.buyCount}/${cfg.watchMinBuys}</span>
-      <span class="${buyrsHit ? 'hit' : ''}">BUYERS: ${entry.uniqueBuyers.size}/${cfg.watchMinBuyers}</span>
-      <span class="${+pricePct > 0 ? 'pos' : 'neg'}">Δ${pricePct}%</span>
-      ${entry.solVolume > 0 ? `<span>VOL:${entry.solVolume.toFixed(3)}◎</span>` : ''}
-    </div>
+    <div class="watch-stat" id="wstat-${mint}">${watchCardStats(entry)}</div>
     <a class="dex-link" href="${dexUrl}" target="_blank">⟶ DEXSCREENER</a>`;
   return card;
 }
@@ -1530,25 +1396,17 @@ function buildWatchCard(entry, mint) {
 function updateWatchCard(mint, entry) {
   const card = document.getElementById('wcard-' + mint);
   if (!card) return;
-  const elapsed  = (Date.now() - entry.startedAt) / 1000;
-  const pct      = Math.min(elapsed / cfg.watchSeconds * 100, 100);
-  const timeLeft = Math.max(0, cfg.watchSeconds - Math.floor(elapsed));
-  const buysHit  = entry.buyCount >= cfg.watchMinBuys;
-  const buyrsHit = entry.uniqueBuyers.size >= cfg.watchMinBuyers;
-  const pricePct = entry.initialPrice > 0 ? ((entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100).toFixed(1) : '0.0';
+  const elapsed = (Date.now() - entry.startedAt) / 1000;
+  const pct     = Math.min(elapsed / cfg.watchSeconds * 100, 100);
 
   const bar = document.getElementById('wbar-' + mint);
   if (bar) bar.style.width = pct + '%';
 
-  const stats = card.querySelector('.watch-stat');
-  if (stats) stats.innerHTML = `
-    <span class="${buysHit ? 'hit' : ''}">BUYS: ${entry.buyCount}/${cfg.watchMinBuys}</span>
-    <span class="${buyrsHit ? 'hit' : ''}">BUYERS: ${entry.uniqueBuyers.size}/${cfg.watchMinBuyers}</span>
-    <span class="${+pricePct > 0 ? 'pos' : 'neg'}">Δ${pricePct}%</span>
-    ${entry.solVolume > 0 ? `<span>VOL:${entry.solVolume.toFixed(3)}◎</span>` : ''}`;
+  const stats = document.getElementById('wstat-' + mint);
+  if (stats) stats.innerHTML = watchCardStats(entry);
 
-  const timer = card.querySelector('[id^="wcard-"] > div:last-of-type');
-  card.querySelector('.card-top > div:last-child').textContent = `WATCHING ${timeLeft}s`;
+  const label = document.getElementById('wlabel-' + mint);
+  if (label) label.textContent = watchCardLabel(entry);
 }
 
 function buildSparklineSvg(pos) {
@@ -1592,8 +1450,8 @@ function buildEntryStatsHtml(s) {
   if (s.velocitySecs != null) rows.push(`<div class="card-row"><span class="lbl">FILL SPEED</span><span>${s.velocitySecs}s</span></div>`);
   if (s.solVol   != null && s.solVol > 0) rows.push(`<div class="card-row"><span class="lbl">WATCH VOL</span><span>${s.solVol.toFixed(3)} SOL</span></div>`);
   if (s.pumpPct  != null) rows.push(`<div class="card-row"><span class="lbl">PUMP BEFORE BUY</span><span class="${s.pumpPct>=0?'pos':'neg'}">${s.pumpPct>=0?'+':''}${s.pumpPct}%</span></div>`);
-  if (s.reclaimDump    != null) rows.push(`<div class="card-row"><span class="lbl">RECLAIM DUMP</span><span class="neg">-${s.reclaimDump}%</span></div>`);
-  if (s.reclaimRecover != null) rows.push(`<div class="card-row"><span class="lbl">RECLAIM RECOVER</span><span class="pos">+${s.reclaimRecover}%</span></div>`);
+  if (s.curveDip     != null) rows.push(`<div class="card-row"><span class="lbl">CURVE DIP</span><span class="neg">-${s.curveDip}%</span></div>`);
+  if (s.curveRecover != null) rows.push(`<div class="card-row"><span class="lbl">CURVE RECOVER</span><span class="pos">+${s.curveRecover}%</span></div>`);
   if (!rows.length) return '';
   return `<hr class="card-hr"><div style="font-size:8px;letter-spacing:1px;color:var(--grey);margin-bottom:3px">ENTRY STATS</div>${rows.join('')}`;
 }
@@ -1620,7 +1478,7 @@ function buildCard(pos, mint) {
   card.innerHTML = `
     <div class="card-top">
       <div>
-        <div class="card-name">${pos.name.slice(0,12).toUpperCase()}${pos.paper ? ' <span style="font-size:8px;background:#ff9800;color:#000;padding:1px 4px;border-radius:2px;vertical-align:middle">PAPER</span>' : ''}${pos.entryStats?.reclaimDump != null ? ' <span style="font-size:8px;background:var(--magenta);color:#000;padding:1px 4px;border-radius:2px;vertical-align:middle">RECLAIM</span>' : ''}</div>
+        <div class="card-name">${pos.name.slice(0,12).toUpperCase()}${pos.paper ? ' <span style="font-size:8px;background:#ff9800;color:#000;padding:1px 4px;border-radius:2px;vertical-align:middle">PAPER</span>' : ''}${pos.entryStats?.curveDip != null ? ' <span style="font-size:8px;background:var(--amber);color:#000;padding:1px 4px;border-radius:2px;vertical-align:middle">CURVE</span>' : ''}</div>
         <div class="card-pool">[${pos.pool}]</div>
       </div>
       <div style="text-align:right">
@@ -1681,7 +1539,6 @@ setInterval(() => {
     if (el) el.textContent = msToTime(Date.now() - pos.openedAt);
   });
   watchlist.forEach((entry, mint) => updateWatchCard(mint, entry));
-  reclaimWatchlist.forEach((entry, mint) => updateReclaimCard(mint, entry));
 }, 1000);
 
 function renderClosed() {
