@@ -913,7 +913,12 @@ function handleWatchUpdate(ev) {
     if (pumpPct > cfg.watchMaxPumpPct) {
       clearTimeout(entry.timer);
       watchlist.delete(mint);
-      addLog('skip', `PUMPED ${tag} — already +${pumpPct.toFixed(0)}% (max ${cfg.watchMaxPumpPct}%) → SKIP`);
+      if (cfg.reclaimEnabled) {
+        addLog('sys', `PUMPED ${tag} — +${pumpPct.toFixed(0)}% → RECLAIM WATCH for dump+recovery`);
+        addToReclaimWatchlist({ mint, name: entry.name, symbol: entry.symbol, pool: entry.pool, poolId: entry.ev.poolId, currentPrice: entry.currentPrice });
+      } else {
+        addLog('skip', `PUMPED ${tag} — already +${pumpPct.toFixed(0)}% (max ${cfg.watchMaxPumpPct}%) → SKIP`);
+      }
       renderWatchCards();
       return;
     }
@@ -925,7 +930,12 @@ function handleWatchUpdate(ev) {
     if (pumpPct >= cfg.watchBotPumpPct && velocitySecs <= cfg.watchBotFillSecs) {
       clearTimeout(entry.timer);
       watchlist.delete(mint);
-      addLog('skip', `BOT SPIKE ${tag} — +${pumpPct.toFixed(0)}% in ${velocitySecs.toFixed(1)}s → SKIP`);
+      if (cfg.reclaimEnabled) {
+        addLog('sys', `BOT SPIKE ${tag} — +${pumpPct.toFixed(0)}% in ${velocitySecs.toFixed(1)}s → RECLAIM WATCH`);
+        addToReclaimWatchlist({ mint, name: entry.name, symbol: entry.symbol, pool: entry.pool, poolId: entry.ev.poolId, currentPrice: entry.currentPrice });
+      } else {
+        addLog('skip', `BOT SPIKE ${tag} — +${pumpPct.toFixed(0)}% in ${velocitySecs.toFixed(1)}s → SKIP`);
+      }
       renderWatchCards();
       return;
     }
@@ -1357,7 +1367,7 @@ async function executeSell(mint, reason, attempt = 1) {
     addLog(pnl >= 0 ? 'sell' : 'loss', `[PAPER] SOLD ${pos.name} [${reason}] PNL:${fmtPnl(pnl)} (${cfg.paperLatencyPct}% latency adj)`);
     const symKey = (pos.symbol || pos.name || '').toLowerCase().trim();
     if (symKey) recentSymbols.set(symKey, Date.now());
-    if (cfg.reclaimEnabled && (reason === 'SL' || reason === 'TRAIL') && pos.currentPrice > 0) {
+    if (cfg.reclaimEnabled && pos.currentPrice > 0) {
       addToReclaimWatchlist(pos);
     }
     closedTrades.unshift({ name: pos.name, reason, pnl, time: now() });
@@ -1418,7 +1428,7 @@ async function executeSell(mint, reason, attempt = 1) {
     if (symKey) recentSymbols.set(symKey, Date.now());
 
     // Reclaim watch — monitor for dump+recovery re-entry after SL/TRAIL
-    if (cfg.reclaimEnabled && (reason === 'SL' || reason === 'TRAIL') && pos.currentPrice > 0) {
+    if (cfg.reclaimEnabled && pos.currentPrice > 0) {
       addToReclaimWatchlist(pos);
     }
 
