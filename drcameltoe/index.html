@@ -298,6 +298,13 @@
   <!-- SETTINGS -->
   <div id="settings-panel">
 
+    <div id="testmode-banner" style="display:none;background:#ff9800;color:#000;font-weight:700;letter-spacing:2px;text-align:center;padding:7px 0;font-size:11px;border-radius:4px;margin-bottom:6px">⚠ PAPER TRADING — NO REAL MONEY</div>
+    <div class="field" style="background:rgba(255,152,0,0.08);border:1px solid rgba(255,152,0,0.35);border-radius:4px;padding:8px 10px;margin-bottom:6px">
+      <label style="color:#ff9800;font-weight:700;letter-spacing:1.5px">PAPER / TEST MODE</label>
+      <input type="checkbox" id="s-testMode" onchange="save('testMode',this.checked);applyTestModeBanner()">
+      <span style="font-size:9px;color:var(--grey);display:block;margin-top:3px">Simulates buys &amp; sells without sending transactions. Use for 24h strategy testing.</span>
+    </div>
+
     <div class="sec-head" onclick="toggleSec(this)">WALLET <span>▾</span></div>
     <div class="sec-body">
       <div class="field">
@@ -492,7 +499,7 @@ const WS_URL  = `ws://${window.location.hostname}:3001`;  // proxy on same serve
 // ═══════════════════════════════════════════════
 const DEFAULTS = {
   privateKey:'', publicKey:'', solAmount:0.01, maxPositions:5,
-  slippage:20, priorityFee:0.0001, cooldown:10,
+  slippage:20, priorityFee:0.0001, cooldown:10, testMode:false,
   pools:['pump'],
   minMcap:10, maxMcap:500, minSolInPool:5, scamFilter:true,
   tpEnabled:true, tpPct:50,
@@ -533,11 +540,17 @@ function applyToUI() {
   });
   const feeEl = document.getElementById('s-priorityFee');
   if (feeEl) feeEl.value = cfg.priorityFee;
-  ['scamFilter','tpEnabled','slEnabled','trailEnabled','timerEnabled','flatlineEnabled','scaleOutEnabled','watchEnabled','symCooldownEnabled','reclaimEnabled'].forEach(k => {
+  ['testMode','scamFilter','tpEnabled','slEnabled','trailEnabled','timerEnabled','flatlineEnabled','scaleOutEnabled','watchEnabled','symCooldownEnabled','reclaimEnabled'].forEach(k => {
     const el = document.getElementById('s-'+k);
     if (el) el.checked = cfg[k];
   });
   buildPoolChips();
+  applyTestModeBanner();
+}
+
+function applyTestModeBanner() {
+  const b = document.getElementById('testmode-banner');
+  if (b) b.style.display = cfg.testMode ? 'block' : 'none';
 }
 
 function buildPoolChips() {
@@ -1072,6 +1085,37 @@ async function executeBuy(ev, watchStats = {}) {
   const { mint, name, symbol, pool, price, poolId } = ev;
   const tag = (symbol || (name||'').slice(0,8) || mint.slice(0,8)).toUpperCase();
 
+  if (cfg.testMode) {
+    lastBuyTime = Date.now();
+    const pos = {
+      mint,
+      name:         name || symbol || mint.slice(0,8),
+      symbol:       symbol || '?',
+      pool:         pool  || '?',
+      poolId:       poolId || mint,
+      entryPrice:   price || 0,
+      currentPrice: price || 0,
+      peakPrice:    price || 0,
+      solSpent:     cfg.solAmount,
+      openedAt:     Date.now(),
+      selling:      false,
+      timerHandle:  null,
+      flatlineTimer:null,
+      partialSold:  false,
+      entryStats:   watchStats,
+      paper:        true,
+    };
+    positions.set(mint, pos);
+    session.solSpent += cfg.solAmount;
+    if (cfg.timerEnabled) {
+      pos.timerHandle = setTimeout(() => triggerSell(mint, 'TIMER'), cfg.timerMin * 60 * 1000);
+    }
+    addLog('buy', `[PAPER] BUY ${pos.name} @ ${fmtPrice(price)}`);
+    renderPositions();
+    updateHeader();
+    return;
+  }
+
   try {
     const res = await fetch(API_URL, {
       method: 'POST',
@@ -1207,6 +1251,17 @@ async function triggerPartialSell(mint) {
   pos.partialSold = true;
   const pct = cfg.scaleOutSellPct;
   addLog('sell', `${pos.name} → TP1 +${cfg.scaleOutTp1Pct}% → PARTIAL SELL ${pct}%`);
+  if (cfg.testMode) {
+    const fraction = pct / 100;
+    const pnlPart  = pos.entryPrice > 0 ? (pos.currentPrice / pos.entryPrice - 1) * pos.solSpent * fraction : 0;
+    session.solReturned += pos.solSpent * fraction + pnlPart;
+    session.pnl         += pnlPart;
+    session.history.push({ t: Date.now() - session.startedAt, pnl: session.pnl });
+    pos.solSpent *= (1 - fraction);
+    addLog('sell', `[PAPER] PARTIAL SOLD ${pos.name} [TP1 ${pct}%] ${fmtPnl(pnlPart)}`);
+    updateHeader(); drawGraph();
+    return;
+  }
   try {
     const res = await fetch(API_URL, {
       method: 'POST',
@@ -1246,6 +1301,29 @@ async function triggerPartialSell(mint) {
 async function executeSell(mint, reason, attempt = 1) {
   const pos = positions.get(mint);
   if (!pos) return;
+
+  if (cfg.testMode) {
+    const pnl    = pos.entryPrice > 0 ? (pos.currentPrice / pos.entryPrice - 1) * pos.solSpent : 0;
+    const solOut = pos.solSpent + pnl;
+    session.solReturned += Math.max(solOut, 0);
+    session.pnl         += pnl;
+    session.trades++;
+    pnl >= 0 ? session.wins++ : session.losses++;
+    session.history.push({ t: Date.now() - session.startedAt, pnl: session.pnl });
+    addLog(pnl >= 0 ? 'sell' : 'loss', `[PAPER] SOLD ${pos.name} [${reason}] PNL:${fmtPnl(pnl)}`);
+    const symKey = (pos.symbol || pos.name || '').toLowerCase().trim();
+    if (symKey) recentSymbols.set(symKey, Date.now());
+    if (cfg.reclaimEnabled && (reason === 'SL' || reason === 'TRAIL') && pos.currentPrice > 0) {
+      addToReclaimWatchlist(pos);
+    }
+    closedTrades.unshift({ name: pos.name, reason, pnl, time: now() });
+    if (closedTrades.length > 20) closedTrades.pop();
+    pos.closed = true; pos.exitReason = reason; pos.exitPnl = pnl; pos.closedAt = Date.now();
+    closedPositions.set(mint, pos);
+    positions.delete(mint);
+    renderPositions(); renderClosed(); updateHeader(); updateGraphStats(); drawGraph();
+    return;
+  }
 
   try {
     const res = await fetch(API_URL, {
@@ -1450,15 +1528,19 @@ function buildCard(pos, mint) {
   card.className = 'card' + (isClosed ? ' closed' : (pctNum > 0 ? ' profit' : pctNum < 0 ? ' loss' : ''));
   card.id = 'card-' + mint;
 
+  const peakPct  = pos.entryPrice > 0 ? (pos.peakPrice / pos.entryPrice - 1) * 100 : 0;
+  const exitPct  = isClosed && pos.entryPrice > 0 ? (pos.currentPrice / pos.entryPrice - 1) * 100 : null;
+
   card.innerHTML = `
     <div class="card-top">
       <div>
-        <div class="card-name">${pos.name.slice(0,12).toUpperCase()}</div>
+        <div class="card-name">${pos.name.slice(0,12).toUpperCase()}${pos.paper ? ' <span style="font-size:8px;background:#ff9800;color:#000;padding:1px 4px;border-radius:2px;vertical-align:middle">PAPER</span>' : ''}</div>
         <div class="card-pool">[${pos.pool}]</div>
       </div>
       <div style="text-align:right">
         ${isClosed
-          ? `<span class="sold-badge">SOLD [${pos.exitReason}]</span>`
+          ? `<span class="sold-badge">SOLD [${pos.exitReason}]</span>
+             <div style="font-size:9px;color:var(--grey);margin-top:2px">${elapsed}</div>`
           : `<div class="card-timer" id="timer-${mint}">${elapsed}</div>
              <button class="sell-btn" onclick="triggerSell('${mint}','MANUAL')">SELL</button>`
         }
@@ -1467,8 +1549,8 @@ function buildCard(pos, mint) {
     <div class="card-mint">${mint.slice(0,22)}...${mint.slice(-6)}</div>
     <hr class="card-hr">
     <div class="card-row"><span class="lbl">ENTRY</span>   <span>${fmtPrice(pos.entryPrice)}</span></div>
-    <div class="card-row"><span class="lbl">${isClosed ? 'EXIT' : 'CURRENT'}</span> <span id="cp-${mint}" class="${pctNum>=0?'pos':'neg'}">${fmtPrice(pos.currentPrice)}</span></div>
-    <div class="card-row"><span class="lbl">PEAK</span>    <span>${fmtPrice(pos.peakPrice)}</span></div>
+    <div class="card-row"><span class="lbl">${isClosed ? 'EXIT' : 'CURRENT'}</span> <span id="cp-${mint}" class="${pctNum>=0?'pos':'neg'}">${fmtPrice(pos.currentPrice)}${exitPct !== null ? ` <span style="font-size:9px">(${exitPct>=0?'+':''}${exitPct.toFixed(1)}%)</span>` : ''}</span></div>
+    <div class="card-row"><span class="lbl">PEAK</span>    <span class="${peakPct>=0?'pos':'neg'}">${fmtPrice(pos.peakPrice)} <span style="font-size:9px">(+${peakPct.toFixed(1)}%)</span></span></div>
     ${!isClosed ? `
     <hr class="card-hr">
     <div class="card-row"><span class="lbl">TP</span>    <span style="color:var(--green)">${cfg.tpEnabled    ? fmtPrice(tpP)    : 'OFF'}</span></div>
@@ -1476,7 +1558,7 @@ function buildCard(pos, mint) {
     <div class="card-row"><span class="lbl">TRAIL</span> <span style="color:var(--amber)">${cfg.trailEnabled ? fmtPrice(trailP) : 'OFF'}</span></div>` : ''}
     ${buildEntryStatsHtml(pos.entryStats)}
     <div class="card-pnl ${pnlSol>=0?'pos':'neg'}" id="pnl-${mint}">
-      ${pnlSol>=0?'+':''}${pnlSol.toFixed(4)} SOL (est.)
+      ${pnlSol>=0?'+':''}${pnlSol.toFixed(4)} SOL${isClosed ? '' : ' (est.)'}
     </div>
     <a class="dex-link" href="${dexUrl}" target="_blank">⟶ DEXSCREENER</a>`;
   return card;
