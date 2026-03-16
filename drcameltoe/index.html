@@ -358,19 +358,19 @@
         <label>TAKE PROFIT %</label>
         <label class="tog"><input type="checkbox" id="s-tpEnabled" checked onchange="save('tpEnabled',this.checked)"><span class="tog-sl"></span></label>
       </div>
-      <div class="field"><input type="number" id="s-tpPct" value="50" min="1" oninput="save('tpPct',+this.value)"></div>
+      <div class="field"><input type="number" id="s-tpPct" value="12" min="1" oninput="save('tpPct',+this.value)"></div>
 
       <div class="tog-wrap">
         <label>STOP LOSS % FROM ENTRY</label>
         <label class="tog"><input type="checkbox" id="s-slEnabled" checked onchange="save('slEnabled',this.checked)"><span class="tog-sl"></span></label>
       </div>
-      <div class="field"><input type="number" id="s-slPct" value="30" min="1" oninput="save('slPct',+this.value)"></div>
+      <div class="field"><input type="number" id="s-slPct" value="14" min="1" oninput="save('slPct',+this.value)"></div>
 
       <div class="tog-wrap">
         <label>TRAILING STOP % FROM PEAK</label>
         <label class="tog"><input type="checkbox" id="s-trailEnabled" checked onchange="save('trailEnabled',this.checked)"><span class="tog-sl"></span></label>
       </div>
-      <div class="field"><input type="number" id="s-trailPct" value="20" min="1" oninput="save('trailPct',+this.value)"></div>
+      <div class="field"><input type="number" id="s-trailPct" value="15" min="1" oninput="save('trailPct',+this.value)"></div>
       <div class="field"><label>TRAIL ACTIVATES AFTER % GAIN (0=always)</label><input type="number" id="s-trailActivatePct" value="5" min="0" step="0.5" oninput="save('trailActivatePct',+this.value)"></div>
 
       <div class="tog-wrap">
@@ -411,7 +411,7 @@
       </div>
       <div class="row2">
         <div class="field"><label>MIN FILL SPEED (SEC, 0=off)</label><input type="number" id="s-watchMinVelocitySecs" value="2" min="0" step="0.5" oninput="save('watchMinVelocitySecs',+this.value)"></div>
-        <div class="field"><label>MAX FILL SPEED (SEC, 0=off)</label><input type="number" id="s-watchMaxVelocitySecs" value="30" min="0" oninput="save('watchMaxVelocitySecs',+this.value)"></div>
+        <div class="field"><label>MAX FILL SPEED (SEC, 0=off)</label><input type="number" id="s-watchMaxVelocitySecs" value="26" min="0" oninput="save('watchMaxVelocitySecs',+this.value)"></div>
       </div>
       <div class="field"><label>MIN SOL VOL (0=off)</label><input type="number" id="s-watchMinSolVol" value="0" min="0" step="0.01" oninput="save('watchMinSolVol',+this.value)"></div>
       <div class="field"><label>MIN PUMP BEFORE ENTRY % (0=off)</label><input type="number" id="s-watchMinPumpPct" value="0" min="0" oninput="save('watchMinPumpPct',+this.value)"></div>
@@ -442,7 +442,7 @@
         <div class="field"><label>MIN DIP FROM PEAK %</label><input type="number" id="s-curveDipPct" value="8" min="1" oninput="save('curveDipPct',+this.value)"></div>
         <div class="field"><label>MIN RECOVER FROM LOW %</label><input type="number" id="s-curveRecoverPct" value="5" min="1" oninput="save('curveRecoverPct',+this.value)"></div>
       </div>
-      <div class="field"><label>MAX DIP FROM PEAK % (0=off)</label><input type="number" id="s-curveMaxDipPct" value="0" min="0" oninput="save('curveMaxDipPct',+this.value)"></div>
+      <div class="field"><label>MAX DIP FROM PEAK % (0=off)</label><input type="number" id="s-curveMaxDipPct" value="32" min="0" oninput="save('curveMaxDipPct',+this.value)"></div>
     </div>
 
     <button id="start-btn" onclick="toggleBot()">▶ START BOT</button>
@@ -504,17 +504,17 @@ const DEFAULTS = {
   slippage:20, priorityFee:0.0001, cooldown:10, testMode:false, paperLatencyPct:2,
   pools:['pump'],
   minMcap:10, maxMcap:500, minSolInPool:5, scamFilter:true,
-  tpEnabled:true, tpPct:50,
-  slEnabled:true, slPct:30,
-  trailEnabled:true, trailPct:20, trailActivatePct:5,
+  tpEnabled:true, tpPct:12,
+  slEnabled:true, slPct:14,
+  trailEnabled:true, trailPct:15, trailActivatePct:5,
   timerEnabled:true, timerMin:10,
   flatlineEnabled:true, flatlineSeconds:20, flatlinePct:2,
   scaleOutEnabled:false, scaleOutTp1Pct:20, scaleOutSellPct:50,
   watchEnabled:true, watchSeconds:10, watchMinBuys:3, watchMinBuyers:3,
-  watchMinVelocitySecs:2, watchMaxVelocitySecs:30, watchMinSolVol:0, watchMinPumpPct:0, watchMaxPumpPct:90,
+  watchMinVelocitySecs:2, watchMaxVelocitySecs:26, watchMinSolVol:0, watchMinPumpPct:0, watchMaxPumpPct:90,
   watchBotPumpPct:50, watchBotFillSecs:3,
   symCooldownEnabled:true, symCooldownSecs:300,
-  curveEnabled:false, curveObserveSecs:15, curveDipPct:8, curveRecoverPct:5, curveMaxDipPct:0,
+  curveEnabled:false, curveObserveSecs:15, curveDipPct:8, curveRecoverPct:5, curveMaxDipPct:32,
 };
 
 let cfg = { ...DEFAULTS };
