@@ -1104,6 +1104,7 @@ async function executeBuy(ev, watchStats = {}) {
       partialSold:  false,
       entryStats:   watchStats,
       paper:        true,
+      priceHistory: price ? [price] : [],
     };
     positions.set(mint, pos);
     session.solSpent += cfg.solAmount;
@@ -1159,6 +1160,7 @@ async function executeBuy(ev, watchStats = {}) {
       flatlineTimer:null,
       partialSold:  false,
       entryStats:   watchStats,
+      priceHistory: [],
     };
 
     positions.set(mint, pos);
@@ -1208,6 +1210,12 @@ function handlePriceUpdate(ev) {
 
   pos.currentPrice  = price;
   if (price > pos.peakPrice) pos.peakPrice = price;
+
+  // Price history for sparkline — halve array when it hits 200 to keep memory flat
+  if (pos.priceHistory.length >= 200) {
+    pos.priceHistory = pos.priceHistory.filter((_, i) => i % 2 === 0);
+  }
+  pos.priceHistory.push(price);
 
   if (pos.entryPrice > 0) {
     const pctEntry = (price - pos.entryPrice) / pos.entryPrice * 100;
@@ -1497,6 +1505,38 @@ function updateWatchCard(mint, entry) {
   card.querySelector('.card-top > div:last-child').textContent = `WATCHING ${timeLeft}s`;
 }
 
+function buildSparklineSvg(pos) {
+  const pts = pos.priceHistory;
+  if (!pts || pts.length < 2) return '';
+  const W = 200, H = 46, PAD = 4;
+  const minP = Math.min(...pts);
+  const maxP = Math.max(...pts);
+  const range = maxP - minP || minP * 0.001;
+  const nx = i  => PAD + (i / (pts.length - 1)) * (W - PAD * 2);
+  const ny = p  => H - PAD - ((p - minP) / range) * (H - PAD * 2);
+  const polyPts = pts.map((p, i) => `${nx(i).toFixed(1)},${ny(p).toFixed(1)}`).join(' ');
+  const lineCol = (pos.currentPrice || pts[pts.length-1]) >= (pos.entryPrice || pts[0]) ? '#4caf50' : '#f44336';
+  // entry reference line (only useful if price range spans it)
+  const ey = ny(pos.entryPrice || pts[0]);
+  const entryLine = `<line x1="${PAD}" y1="${ey.toFixed(1)}" x2="${W-PAD}" y2="${ey.toFixed(1)}" stroke="#555" stroke-width="0.7" stroke-dasharray="3,3"/>`;
+  // buy dot (first point, blue)
+  const bx = nx(0).toFixed(1), by = ny(pts[0]).toFixed(1);
+  // sell dot (last point, green/red on closed)
+  const lx = nx(pts.length-1).toFixed(1), ly = ny(pts[pts.length-1]).toFixed(1);
+  const sellDot = pos.closed
+    ? `<circle cx="${lx}" cy="${ly}" r="3" fill="${(pos.exitPnl||0) >= 0 ? '#4caf50' : '#f44336'}"/>`
+    : `<circle cx="${lx}" cy="${ly}" r="2" fill="${lineCol}" opacity="0.9"/>`;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:46px;display:block;margin-top:5px">${entryLine}<polyline points="${polyPts}" fill="none" stroke="${lineCol}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${bx}" cy="${by}" r="2.5" fill="#2196f3"/>${sellDot}</svg>`;
+}
+
+function updateCardSparkline(mint) {
+  const el = document.getElementById('spark-' + mint);
+  if (!el) return;
+  const pos = positions.get(mint);
+  if (!pos) return;
+  el.innerHTML = buildSparklineSvg(pos);
+}
+
 function buildEntryStatsHtml(s) {
   if (!s || Object.keys(s).length === 0) return '';
   const rows = [];
@@ -1560,6 +1600,7 @@ function buildCard(pos, mint) {
     <div class="card-pnl ${pnlSol>=0?'pos':'neg'}" id="pnl-${mint}">
       ${pnlSol>=0?'+':''}${pnlSol.toFixed(4)} SOL${isClosed ? '' : ' (est.)'}
     </div>
+    <div id="spark-${mint}">${buildSparklineSvg(pos)}</div>
     <a class="dex-link" href="${dexUrl}" target="_blank">⟶ DEXSCREENER</a>`;
   return card;
 }
@@ -1584,6 +1625,7 @@ function updateCardPrice(mint, price, prev) {
   pnlEl.textContent = `${pctNum>=0?'+':''}${pctNum.toFixed(1)}%   ${fmtPnl(pnlSol)}`;
   pnlEl.className   = 'card-pnl ' + (pctNum >= 0 ? 'pos' : 'neg');
   if (card) card.className = 'card' + (pctNum > 0 ? ' profit' : pctNum < 0 ? ' loss' : '');
+  updateCardSparkline(mint);
 }
 
 // Tick timers every second
