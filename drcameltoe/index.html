@@ -303,6 +303,11 @@
       <label style="color:#ff9800;font-weight:700;letter-spacing:1.5px">PAPER / TEST MODE</label>
       <input type="checkbox" id="s-testMode" onchange="save('testMode',this.checked);applyTestModeBanner()">
       <span style="font-size:9px;color:var(--grey);display:block;margin-top:3px">Simulates buys &amp; sells without sending transactions. Use for 24h strategy testing.</span>
+      <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
+        <label style="color:var(--fg);font-size:9px;letter-spacing:1px">SELL LATENCY PENALTY %</label>
+        <input type="number" id="s-paperLatencyPct" value="2" min="0" max="20" step="0.5" style="width:60px" oninput="save('paperLatencyPct',+this.value)">
+        <span style="font-size:9px;color:var(--grey)">simulates slippage from tx latency</span>
+      </div>
     </div>
 
     <div class="sec-head" onclick="toggleSec(this)">WALLET <span>▾</span></div>
@@ -499,7 +504,7 @@ const WS_URL  = `ws://${window.location.hostname}:3001`;  // proxy on same serve
 // ═══════════════════════════════════════════════
 const DEFAULTS = {
   privateKey:'', publicKey:'', solAmount:0.01, maxPositions:5,
-  slippage:20, priorityFee:0.0001, cooldown:10, testMode:false,
+  slippage:20, priorityFee:0.0001, cooldown:10, testMode:false, paperLatencyPct:2,
   pools:['pump'],
   minMcap:10, maxMcap:500, minSolInPool:5, scamFilter:true,
   tpEnabled:true, tpPct:50,
@@ -529,7 +534,7 @@ function save(k, v) {
 }
 
 function applyToUI() {
-  ['privateKey','publicKey','solAmount','maxPositions','slippage','cooldown',
+  ['privateKey','publicKey','solAmount','maxPositions','slippage','cooldown','paperLatencyPct',
    'minMcap','maxMcap','minSolInPool','tpPct','slPct','trailPct','trailActivatePct','timerMin',
    'flatlineSeconds','flatlinePct','scaleOutTp1Pct','scaleOutSellPct',
    'watchSeconds','watchMinBuys','watchMinBuyers','watchMinVelocitySecs','watchMaxVelocitySecs','watchMinSolVol','watchMinPumpPct','watchMaxPumpPct',
@@ -1260,8 +1265,9 @@ async function triggerPartialSell(mint) {
   const pct = cfg.scaleOutSellPct;
   addLog('sell', `${pos.name} → TP1 +${cfg.scaleOutTp1Pct}% → PARTIAL SELL ${pct}%`);
   if (cfg.testMode) {
-    const fraction = pct / 100;
-    const pnlPart  = pos.entryPrice > 0 ? (pos.currentPrice / pos.entryPrice - 1) * pos.solSpent * fraction : 0;
+    const fraction   = pct / 100;
+    const exitPrice  = pos.currentPrice * (1 - (cfg.paperLatencyPct || 0) / 100);
+    const pnlPart  = pos.entryPrice > 0 ? (exitPrice / pos.entryPrice - 1) * pos.solSpent * fraction : 0;
     session.solReturned += pos.solSpent * fraction + pnlPart;
     session.pnl         += pnlPart;
     session.history.push({ t: Date.now() - session.startedAt, pnl: session.pnl });
@@ -1311,14 +1317,16 @@ async function executeSell(mint, reason, attempt = 1) {
   if (!pos) return;
 
   if (cfg.testMode) {
-    const pnl    = pos.entryPrice > 0 ? (pos.currentPrice / pos.entryPrice - 1) * pos.solSpent : 0;
+    const exitPrice = pos.currentPrice * (1 - (cfg.paperLatencyPct || 0) / 100);
+    pos.currentPrice = exitPrice;
+    const pnl    = pos.entryPrice > 0 ? (exitPrice / pos.entryPrice - 1) * pos.solSpent : 0;
     const solOut = pos.solSpent + pnl;
     session.solReturned += Math.max(solOut, 0);
     session.pnl         += pnl;
     session.trades++;
     pnl >= 0 ? session.wins++ : session.losses++;
     session.history.push({ t: Date.now() - session.startedAt, pnl: session.pnl });
-    addLog(pnl >= 0 ? 'sell' : 'loss', `[PAPER] SOLD ${pos.name} [${reason}] PNL:${fmtPnl(pnl)}`);
+    addLog(pnl >= 0 ? 'sell' : 'loss', `[PAPER] SOLD ${pos.name} [${reason}] PNL:${fmtPnl(pnl)} (${cfg.paperLatencyPct}% latency adj)`);
     const symKey = (pos.symbol || pos.name || '').toLowerCase().trim();
     if (symKey) recentSymbols.set(symKey, Date.now());
     if (cfg.reclaimEnabled && (reason === 'SL' || reason === 'TRAIL') && pos.currentPrice > 0) {
