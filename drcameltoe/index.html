@@ -419,7 +419,11 @@
       </div>
       <div class="field"><label>MIN SOL VOL (0=off)</label><input type="number" id="s-watchMinSolVol" value="0" min="0" step="0.01" oninput="save('watchMinSolVol',+this.value)"></div>
       <div class="field"><label>MIN PUMP BEFORE ENTRY % (0=off)</label><input type="number" id="s-watchMinPumpPct" value="0" min="0" oninput="save('watchMinPumpPct',+this.value)"></div>
-      <div class="field"><label>MAX PUMP BEFORE ENTRY % (0=off)</label><input type="number" id="s-watchMaxPumpPct" value="200" min="0" oninput="save('watchMaxPumpPct',+this.value)"></div>
+      <div class="field"><label>MAX PUMP BEFORE ENTRY % (0=off)</label><input type="number" id="s-watchMaxPumpPct" value="90" min="0" oninput="save('watchMaxPumpPct',+this.value)"></div>
+      <div class="row2">
+        <div class="field"><label>BOT SPIKE PUMP % (0=off)</label><input type="number" id="s-watchBotPumpPct" value="50" min="0" oninput="save('watchBotPumpPct',+this.value)"></div>
+        <div class="field"><label>BOT SPIKE MAX FILL (SEC)</label><input type="number" id="s-watchBotFillSecs" value="3" min="0" step="0.5" oninput="save('watchBotFillSecs',+this.value)"></div>
+      </div>
     </div>
 
     <div class="sec-head" onclick="toggleSec(this)">SYMBOL COOLDOWN <span>▾</span></div>
@@ -514,7 +518,8 @@ const DEFAULTS = {
   flatlineEnabled:true, flatlineSeconds:20, flatlinePct:2,
   scaleOutEnabled:false, scaleOutTp1Pct:20, scaleOutSellPct:50,
   watchEnabled:true, watchSeconds:10, watchMinBuys:3, watchMinBuyers:3,
-  watchMinVelocitySecs:2, watchMaxVelocitySecs:30, watchMinSolVol:0, watchMinPumpPct:0, watchMaxPumpPct:200,
+  watchMinVelocitySecs:2, watchMaxVelocitySecs:30, watchMinSolVol:0, watchMinPumpPct:0, watchMaxPumpPct:90,
+  watchBotPumpPct:50, watchBotFillSecs:3,
   symCooldownEnabled:true, symCooldownSecs:300,
   reclaimEnabled:false, reclaimWindowSecs:120, reclaimMinDumpPct:10, reclaimMinRecoverPct:5, reclaimMinBuys:3, reclaimMinBuyers:3,
 };
@@ -537,7 +542,7 @@ function applyToUI() {
   ['privateKey','publicKey','solAmount','maxPositions','slippage','cooldown','paperLatencyPct',
    'minMcap','maxMcap','minSolInPool','tpPct','slPct','trailPct','trailActivatePct','timerMin',
    'flatlineSeconds','flatlinePct','scaleOutTp1Pct','scaleOutSellPct',
-   'watchSeconds','watchMinBuys','watchMinBuyers','watchMinVelocitySecs','watchMaxVelocitySecs','watchMinSolVol','watchMinPumpPct','watchMaxPumpPct',
+   'watchSeconds','watchMinBuys','watchMinBuyers','watchMinVelocitySecs','watchMaxVelocitySecs','watchMinSolVol','watchMinPumpPct','watchMaxPumpPct','watchBotPumpPct','watchBotFillSecs',
    'symCooldownSecs',
    'reclaimWindowSecs','reclaimMinDumpPct','reclaimMinRecoverPct','reclaimMinBuys','reclaimMinBuyers'].forEach(k => {
     const el = document.getElementById('s-'+k);
@@ -909,6 +914,18 @@ function handleWatchUpdate(ev) {
       clearTimeout(entry.timer);
       watchlist.delete(mint);
       addLog('skip', `PUMPED ${tag} — already +${pumpPct.toFixed(0)}% (max ${cfg.watchMaxPumpPct}%) → SKIP`);
+      renderWatchCards();
+      return;
+    }
+  }
+
+  // Bot spike combo — high pump AND suspiciously fast fill = bot-driven top, skip
+  if (cfg.watchBotPumpPct > 0 && cfg.watchBotFillSecs > 0 && entry.initialPrice > 0) {
+    const pumpPct = (entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100;
+    if (pumpPct >= cfg.watchBotPumpPct && velocitySecs <= cfg.watchBotFillSecs) {
+      clearTimeout(entry.timer);
+      watchlist.delete(mint);
+      addLog('skip', `BOT SPIKE ${tag} — +${pumpPct.toFixed(0)}% in ${velocitySecs.toFixed(1)}s → SKIP`);
       renderWatchCards();
       return;
     }
