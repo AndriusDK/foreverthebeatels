@@ -1080,11 +1080,9 @@ function handlePriceUpdate(ev) {
   if (!price) return;
 
   const pos = positions.get(mint);
-  if (!pos || pos.selling) return;
+  if (!pos) return;
 
-  const prev        = pos.currentPrice;
-
-  // First trade event after buy — use as real entry price
+  // Always capture first real price — needed for PNL even if sell is in-flight
   if (pos.entryPrice === 0) {
     pos.entryPrice  = price;
     pos.peakPrice   = price;
@@ -1100,6 +1098,8 @@ function handlePriceUpdate(ev) {
       }, cfg.flatlineSeconds * 1000);
     }
   }
+
+  if (pos.selling) return;
 
   pos.currentPrice  = price;
   if (price > pos.peakPrice) pos.peakPrice = price;
@@ -1242,10 +1242,10 @@ async function executeSell(mint, reason, attempt = 1) {
     });
 
     if (!res.ok) {
-      if (attempt < 2) {
-        addLog('error', `SELL RETRY ${pos.name} — HTTP ${res.status}`);
-        await sleep(1500);
-        return executeSell(mint, reason, 2);
+      if (attempt <= 3) {
+        addLog('error', `SELL RETRY ${pos.name} [${attempt}/3] — HTTP ${res.status}`);
+        await sleep(2000 * attempt);
+        return executeSell(mint, reason, attempt + 1);
       }
       const txt = await res.text().catch(()=>'');
       addLog('error', `SELL FAILED ${pos.name} — ${res.status} ${txt.slice(0,50)}`);
@@ -1290,12 +1290,14 @@ async function executeSell(mint, reason, attempt = 1) {
     drawGraph();
 
   } catch(e) {
-    if (attempt < 2) {
-      addLog('error', `SELL RETRY ${pos.name} — ${e.message}`);
-      await sleep(1500);
-      return executeSell(mint, reason, 2);
+    const maxAttempts = 10;
+    if (attempt <= maxAttempts) {
+      const delay = Math.min(2000 * Math.pow(2, attempt - 1), 30000); // 2s,4s,8s,16s,30s...
+      addLog('error', `SELL RETRY ${pos.name} [${attempt}/${maxAttempts}] — ${e.message}`);
+      await sleep(delay);
+      return executeSell(mint, reason, attempt + 1);
     }
-    addLog('error', `SELL ERROR ${pos.name} — ${e.message}`);
+    addLog('error', `SELL ERROR ${pos.name} — ${e.message} (gave up after ${maxAttempts} attempts)`);
     pos.selling = false;
   }
 }
@@ -1489,7 +1491,7 @@ function buildCard(pos, mint) {
           ? `<span class="sold-badge">SOLD [${pos.exitReason}]</span>
              <div style="font-size:9px;color:var(--grey);margin-top:2px">${elapsed}</div>`
           : `<div class="card-timer" id="timer-${mint}">${elapsed}</div>
-             <button class="sell-btn" onclick="triggerSell('${mint}','MANUAL')">SELL</button>`
+             <button class="sell-btn" id="sellbtn-${mint}" onclick="triggerSell('${mint}','MANUAL')" ${pos.selling ? 'disabled' : ''}>${pos.selling ? 'SELLING…' : 'SELL'}</button>`
         }
       </div>
     </div>
@@ -1538,8 +1540,13 @@ function updateCardPrice(mint, price, prev) {
 // Tick timers every second
 setInterval(() => {
   positions.forEach((pos, mint) => {
-    const el = document.getElementById('timer-' + mint);
-    if (el) el.textContent = msToTime(Date.now() - pos.openedAt);
+    const timer = document.getElementById('timer-' + mint);
+    if (timer) timer.textContent = msToTime(Date.now() - pos.openedAt);
+    const btn = document.getElementById('sellbtn-' + mint);
+    if (btn) {
+      btn.disabled    = pos.selling;
+      btn.textContent = pos.selling ? 'SELLING…' : 'SELL';
+    }
   });
   watchlist.forEach((entry, mint) => updateWatchCard(mint, entry));
 }, 1000);
