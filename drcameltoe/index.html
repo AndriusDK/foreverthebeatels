@@ -839,9 +839,10 @@ function handleCreate(ev) {
     currentMcap:  marketCapSol || 0,
     localHigh:    price || 0,
     localLow:     price || 0,
-    buyCount:     0,
-    uniqueBuyers: new Set(),
-    solVolume:    0,
+    buyCount:       0,
+    uniqueBuyers:   new Set(),
+    solVolume:      0,
+    priceSnapshots: [],
     timer: null,
   };
   // Expire after watch window
@@ -866,10 +867,12 @@ function handleWatchUpdate(ev) {
 
   if (price) {
     entry.currentPrice = price;
-    if (price > entry.localHigh) { entry.localHigh = price; entry.localLow = price; }
-    else if (price < entry.localLow) entry.localLow = price;
+    if (price > entry.localHigh) entry.localHigh = price;
+    if (price < entry.localLow)  entry.localLow  = price;
     if (entry.initialPrice > 0 && entry.initialMcap > 0)
       entry.currentMcap = entry.initialMcap * (price / entry.initialPrice);
+    entry.priceSnapshots.push(price);
+    if (entry.priceSnapshots.length > 40) entry.priceSnapshots.shift();
   }
 
   if (txType === 'buy') {
@@ -1357,6 +1360,20 @@ function renderWatchCards() {
   }
 }
 
+function watchTrendLabel(entry) {
+  const snaps = entry.priceSnapshots;
+  if (snaps.length < 4) return '';
+  const half   = Math.floor(snaps.length / 2);
+  const avgA   = snaps.slice(0, half).reduce((a,b)=>a+b,0) / half;
+  const avgB   = snaps.slice(half).reduce((a,b)=>a+b,0) / (snaps.length - half);
+  const slope  = entry.initialPrice > 0 ? (avgB - avgA) / entry.initialPrice * 100 : 0;
+  const swing  = entry.initialPrice > 0 ? (entry.localHigh - entry.localLow) / entry.initialPrice * 100 : 0;
+  if (swing > 25) return `<span style="color:#ff9800">⚡CHOPPY ${swing.toFixed(0)}%</span>`;
+  if (slope >  4) return `<span style="color:#4caf50">↑CLIMBING +${slope.toFixed(1)}%</span>`;
+  if (slope < -3) return `<span style="color:#f44336">↓FADING ${slope.toFixed(1)}%</span>`;
+  return `<span style="color:#888">→FLAT</span>`;
+}
+
 function watchCardStats(entry) {
   const elapsed    = (Date.now() - entry.startedAt) / 1000;
   const pricePct   = entry.initialPrice > 0 ? ((entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100).toFixed(1) : '0.0';
@@ -1386,9 +1403,11 @@ function watchCardStats(entry) {
             <span>${Math.floor(elapsed)}s</span>`;
   }
 
+  const trendHtml = watchTrendLabel(entry);
   return `<span class="${buysHit?'hit':''}">BUYS: ${entry.buyCount}/${cfg.watchMinBuys}</span>
           <span class="${buyrsHit?'hit':''}">BUYERS: ${entry.uniqueBuyers.size}/${cfg.watchMinBuyers}</span>
           <span class="${+pricePct>0?'pos':'neg'}">Δ${pricePct}%</span>
+          ${trendHtml}
           ${entry.solVolume > 0 ? `<span>VOL:${entry.solVolume.toFixed(3)}◎</span>` : ''}`;
 }
 
