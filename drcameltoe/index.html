@@ -286,6 +286,10 @@
     <div class="hstat-label">EVENTS RX</div>
     <div class="hstat-val neu" id="h-events">0</div>
   </div>
+  <div class="hstat">
+    <div class="hstat-label">SESSION TIME</div>
+    <div class="hstat-val neu" id="h-uptime">00:00:00</div>
+  </div>
 </div>
 
 <!-- MAIN -->
@@ -649,6 +653,7 @@ function startBot() {
 
   connectWS();
   updateHeader();
+  startUptimeTick();
   drawGraph();
   addLog('sys', 'Bot started — pools: ' + cfg.pools.join(', '));
 }
@@ -660,6 +665,7 @@ function stopBot() {
   document.getElementById('start-btn').textContent = '▶ START BOT';
   document.getElementById('start-btn').classList.remove('running');
   setStatus('offline');
+  stopUptimeTick();
   addLog('sys', 'Bot stopped');
 }
 
@@ -1591,6 +1597,23 @@ function renderClosed() {
 // ═══════════════════════════════════════════════
 //  RENDER — HEADER
 // ═══════════════════════════════════════════════
+let _uptimeInterval = null;
+function startUptimeTick() {
+  clearInterval(_uptimeInterval);
+  _uptimeInterval = setInterval(() => {
+    if (!session.startedAt) return;
+    const s = Math.floor((Date.now() - session.startedAt) / 1000);
+    const h = String(Math.floor(s / 3600)).padStart(2,'0');
+    const m = String(Math.floor((s % 3600) / 60)).padStart(2,'0');
+    const sec = String(s % 60).padStart(2,'0');
+    document.getElementById('h-uptime').textContent = `${h}:${m}:${sec}`;
+  }, 1000);
+}
+function stopUptimeTick() {
+  clearInterval(_uptimeInterval);
+  document.getElementById('h-uptime').textContent = '00:00:00';
+}
+
 function updateHeader() {
   const pnl = session.pnl;
   const el  = document.getElementById('h-pnl');
