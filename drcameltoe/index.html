@@ -523,16 +523,15 @@ function loadCfg() {
   try { cfg = { ...DEFAULTS, ...JSON.parse(localStorage.getItem('drc_cfg') || '{}') }; }
   catch(e) { cfg = { ...DEFAULTS }; }
 
-  // One-time migration v4: apply recommended trading defaults
-  if (!cfg._v4) {
+  // One-time migration v5: apply recommended trading defaults
+  if (!cfg._v5) {
     const migrate = {
       tpPct:12, slPct:14, trailPct:15, trailActivatePct:6,
       timerMin:8, maxMcap:200, watchMaxVelocitySecs:26,
       watchMinSolVol:0, watchMaxPumpPct:90,
-      watchMinBuys:5, watchMinBuyers:5,
       curveDipPct:10, curveMaxDipPct:32,
       scaleOutEnabled:true, scaleOutTp1Pct:8, scaleOutSellPct:50,
-      _v2:true, _v3:true, _v4:true
+      _v2:true, _v3:true, _v4:true, _v5:true
     };
     cfg = { ...cfg, ...migrate };
     localStorage.setItem('drc_cfg', JSON.stringify(cfg));
@@ -1377,7 +1376,8 @@ function watchCardStats(entry) {
     return `<span class="hit">DIP:-${dipPct.toFixed(1)}%</span>
             <span class="${recHit?'hit':''}">REC:+${recoverPct.toFixed(1)}%/+${cfg.curveRecoverPct}%</span>
             <span class="${buysHit?'hit':''}">B:${entry.buyCount}/${cfg.watchMinBuys}</span>
-            <span class="${buyrsHit?'hit':''}">U:${entry.uniqueBuyers.size}/${cfg.watchMinBuyers}</span>`;
+            <span class="${buyrsHit?'hit':''}">U:${entry.uniqueBuyers.size}/${cfg.watchMinBuyers}</span>
+            <span>${Math.floor(elapsed)}s</span>`;
   }
 
   return `<span class="${buysHit?'hit':''}">BUYS: ${entry.buyCount}/${cfg.watchMinBuys}</span>
