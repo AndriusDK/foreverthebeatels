@@ -878,6 +878,8 @@ function handleCreate(ev) {
     localLow:     price || 0,
     buyCount:       0,
     uniqueBuyers:   new Set(),
+    sellCount:      0,
+    uniqueSellers:  new Set(),
     solVolume:      0,
     priceSnapshots: [],
     timer: null,
@@ -917,6 +919,11 @@ function handleWatchUpdate(ev) {
     entry.solVolume += (solAmount || quoteAmount || 0);
     if (tradersInvolved) {
       Object.keys(tradersInvolved).forEach(addr => entry.uniqueBuyers.add(addr));
+    }
+  } else if (txType === 'sell') {
+    entry.sellCount++;
+    if (tradersInvolved) {
+      Object.keys(tradersInvolved).forEach(addr => entry.uniqueSellers.add(addr));
     }
   }
 
@@ -1587,10 +1594,12 @@ function watchCardStats(entry) {
     const dipHit     = dipPct >= cfg.curveDipPct;
     const recHit     = recoverPct >= cfg.curveRecoverPct;
     if (inObserve) {
+      const bsR = entry.sellCount > 0 ? (entry.buyCount / entry.sellCount).toFixed(1) : null;
       return `<span class="${buysHit?'hit':''}">BUYS:${entry.buyCount}</span>
               <span class="${buyrsHit?'hit':''}">U:${entry.uniqueBuyers.size}</span>
               <span class="${+pricePct>0?'pos':'neg'}">Δ${pricePct}%</span>
               ${entry.solVolume > 0 ? `<span>VOL:${entry.solVolume.toFixed(3)}◎</span>` : ''}
+              ${entry.sellCount > 0 ? `<span style="color:#e57373">S:${entry.sellCount}/${entry.uniqueSellers.size}u</span>${bsR ? ` <span style="color:#aaa">B/S:${bsR}</span>` : ''}` : ''}
               ${momRow}`;
     }
     if (!dipHit) {
@@ -1606,12 +1615,17 @@ function watchCardStats(entry) {
             ${momRow}`;
   }
 
-  const trendHtml = watchTrendLabel(entry);
+  const trendHtml  = watchTrendLabel(entry);
+  const bsRatio    = entry.sellCount > 0 ? (entry.buyCount / entry.sellCount).toFixed(1) : null;
+  const sellsHtml  = entry.sellCount > 0
+    ? `<span style="color:#e57373">S:${entry.sellCount}/${entry.uniqueSellers.size}u</span>${bsRatio ? ` <span style="color:#aaa">B/S:${bsRatio}</span>` : ''}`
+    : '';
   return `<span class="${buysHit?'hit':''}">BUYS: ${entry.buyCount}/${cfg.watchMinBuys}</span>
           <span class="${buyrsHit?'hit':''}">BUYERS: ${entry.uniqueBuyers.size}/${cfg.watchMinBuyers}</span>
           <span class="${+pricePct>0?'pos':'neg'}">Δ${pricePct}%</span>
           ${trendHtml}
           ${entry.solVolume > 0 ? `<span>VOL:${entry.solVolume.toFixed(3)}◎</span>` : ''}
+          ${sellsHtml}
           ${momRow}`;
 }
 
