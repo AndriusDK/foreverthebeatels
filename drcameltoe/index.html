@@ -348,10 +348,10 @@
     <div class="sec-head" onclick="toggleSec(this)">ENTRY FILTERS <span>▾</span></div>
     <div class="sec-body">
       <div class="row2">
-        <div class="field"><label>MIN MCAP (SOL)</label><input type="number" id="s-minMcap" value="10"  min="0" oninput="save('minMcap',+this.value)"></div>
-        <div class="field"><label>MAX MCAP (SOL)</label><input type="number" id="s-maxMcap" value="500" min="0" oninput="save('maxMcap',+this.value)"></div>
+        <div class="field"><label>MIN MCAP (SOL)</label><input type="number" id="s-minMcap" value="38"  min="0" oninput="save('minMcap',+this.value)"></div>
+        <div class="field"><label>MAX MCAP (SOL)</label><input type="number" id="s-maxMcap" value="200" min="0" oninput="save('maxMcap',+this.value)"></div>
       </div>
-      <div class="field"><label>MIN SOL IN POOL</label><input type="number" id="s-minSolInPool" value="5" min="0" oninput="save('minSolInPool',+this.value)"></div>
+      <div class="field"><label>MIN SOL IN POOL</label><input type="number" id="s-minSolInPool" value="1" min="0" oninput="save('minSolInPool',+this.value)"></div>
       <div class="tog-wrap">
         <label>SCAM FILTER</label>
         <label class="tog"><input type="checkbox" id="s-scamFilter" checked onchange="save('scamFilter',this.checked)"><span class="tog-sl"></span></label>
@@ -364,26 +364,26 @@
         <label>TAKE PROFIT %</label>
         <label class="tog"><input type="checkbox" id="s-tpEnabled" checked onchange="save('tpEnabled',this.checked)"><span class="tog-sl"></span></label>
       </div>
-      <div class="field"><input type="number" id="s-tpPct" value="12" min="1" oninput="save('tpPct',+this.value)"></div>
+      <div class="field"><input type="number" id="s-tpPct" value="13" min="1" oninput="save('tpPct',+this.value)"></div>
 
       <div class="tog-wrap">
         <label>STOP LOSS % FROM ENTRY</label>
         <label class="tog"><input type="checkbox" id="s-slEnabled" checked onchange="save('slEnabled',this.checked)"><span class="tog-sl"></span></label>
       </div>
-      <div class="field"><input type="number" id="s-slPct" value="14" min="1" oninput="save('slPct',+this.value)"></div>
+      <div class="field"><input type="number" id="s-slPct" value="16" min="1" oninput="save('slPct',+this.value)"></div>
 
       <div class="tog-wrap">
         <label>TRAILING STOP % FROM PEAK</label>
         <label class="tog"><input type="checkbox" id="s-trailEnabled" checked onchange="save('trailEnabled',this.checked)"><span class="tog-sl"></span></label>
       </div>
-      <div class="field"><input type="number" id="s-trailPct" value="15" min="1" oninput="save('trailPct',+this.value)"></div>
+      <div class="field"><input type="number" id="s-trailPct" value="8" min="1" oninput="save('trailPct',+this.value)"></div>
       <div class="field"><label>TRAIL ACTIVATES AFTER % GAIN (0=always)</label><input type="number" id="s-trailActivatePct" value="5" min="0" step="0.5" oninput="save('trailActivatePct',+this.value)"></div>
 
       <div class="tog-wrap">
         <label>MAX TRADE DURATION (MIN)</label>
         <label class="tog"><input type="checkbox" id="s-timerEnabled" checked onchange="save('timerEnabled',this.checked)"><span class="tog-sl"></span></label>
       </div>
-      <div class="field"><input type="number" id="s-timerMin" value="10" min="1" oninput="save('timerMin',+this.value)"></div>
+      <div class="field"><input type="number" id="s-timerMin" value="8" min="1" oninput="save('timerMin',+this.value)"></div>
 
       <div class="tog-wrap">
         <label>FLATLINE CUT (no movement = dead)</label>
@@ -396,10 +396,10 @@
 
       <div class="tog-wrap">
         <label>SCALE-OUT (partial exit at TP1)</label>
-        <label class="tog"><input type="checkbox" id="s-scaleOutEnabled" onchange="save('scaleOutEnabled',this.checked)"><span class="tog-sl"></span></label>
+        <label class="tog"><input type="checkbox" id="s-scaleOutEnabled" checked onchange="save('scaleOutEnabled',this.checked)"><span class="tog-sl"></span></label>
       </div>
       <div class="row2">
-        <div class="field"><label>TP1 % GAIN</label><input type="number" id="s-scaleOutTp1Pct" value="20" min="1" oninput="save('scaleOutTp1Pct',+this.value)"></div>
+        <div class="field"><label>TP1 % GAIN</label><input type="number" id="s-scaleOutTp1Pct" value="8" min="1" oninput="save('scaleOutTp1Pct',+this.value)"></div>
         <div class="field"><label>SELL % AT TP1</label><input type="number" id="s-scaleOutSellPct" value="50" min="10" max="90" oninput="save('scaleOutSellPct',+this.value)"></div>
       </div>
     </div>
@@ -410,13 +410,13 @@
         <label>ENABLED</label>
         <label class="tog"><input type="checkbox" id="s-watchEnabled" checked onchange="save('watchEnabled',this.checked)"><span class="tog-sl"></span></label>
       </div>
-      <div class="field"><label>WATCH WINDOW (SEC)</label><input type="number" id="s-watchSeconds" value="10" min="1" oninput="save('watchSeconds',+this.value)"></div>
+      <div class="field"><label>WATCH WINDOW (SEC)</label><input type="number" id="s-watchSeconds" value="60" min="1" oninput="save('watchSeconds',+this.value)"></div>
       <div class="row2">
-        <div class="field"><label>MIN BUYS</label><input type="number" id="s-watchMinBuys" value="3" min="1" oninput="save('watchMinBuys',+this.value)"></div>
-        <div class="field"><label>MIN BUYERS</label><input type="number" id="s-watchMinBuyers" value="3" min="1" oninput="save('watchMinBuyers',+this.value)"></div>
+        <div class="field"><label>MIN BUYS</label><input type="number" id="s-watchMinBuys" value="5" min="1" oninput="save('watchMinBuys',+this.value)"></div>
+        <div class="field"><label>MIN BUYERS</label><input type="number" id="s-watchMinBuyers" value="5" min="1" oninput="save('watchMinBuyers',+this.value)"></div>
       </div>
       <div class="row2">
-        <div class="field"><label>MIN FILL SPEED (SEC, 0=off)</label><input type="number" id="s-watchMinVelocitySecs" value="2" min="0" step="0.5" oninput="save('watchMinVelocitySecs',+this.value)"></div>
+        <div class="field"><label>MIN FILL SPEED (SEC, 0=off)</label><input type="number" id="s-watchMinVelocitySecs" value="1" min="0" step="0.5" oninput="save('watchMinVelocitySecs',+this.value)"></div>
         <div class="field"><label>MAX FILL SPEED (SEC, 0=off)</label><input type="number" id="s-watchMaxVelocitySecs" value="26" min="0" oninput="save('watchMaxVelocitySecs',+this.value)"></div>
       </div>
       <div class="field"><label>MIN SOL VOL (0=off)</label><input type="number" id="s-watchMinSolVol" value="0" min="0" step="0.01" oninput="save('watchMinSolVol',+this.value)"></div>
@@ -441,12 +441,12 @@
     <div class="sec-body">
       <div class="tog-wrap">
         <label>ENABLED</label>
-        <label class="tog"><input type="checkbox" id="s-curveEnabled" onchange="save('curveEnabled',this.checked)"><span class="tog-sl"></span></label>
+        <label class="tog"><input type="checkbox" id="s-curveEnabled" checked onchange="save('curveEnabled',this.checked)"><span class="tog-sl"></span></label>
       </div>
       <div class="field"><label>OBSERVE FIRST (SEC)</label><input type="number" id="s-curveObserveSecs" value="15" min="1" oninput="save('curveObserveSecs',+this.value)"></div>
       <div class="row2">
-        <div class="field"><label>MIN DIP FROM PEAK %</label><input type="number" id="s-curveDipPct" value="8" min="1" oninput="save('curveDipPct',+this.value)"></div>
-        <div class="field"><label>MIN RECOVER FROM LOW %</label><input type="number" id="s-curveRecoverPct" value="5" min="1" oninput="save('curveRecoverPct',+this.value)"></div>
+        <div class="field"><label>MIN DIP FROM PEAK %</label><input type="number" id="s-curveDipPct" value="20" min="1" oninput="save('curveDipPct',+this.value)"></div>
+        <div class="field"><label>MIN RECOVER FROM LOW %</label><input type="number" id="s-curveRecoverPct" value="20" min="1" oninput="save('curveRecoverPct',+this.value)"></div>
       </div>
       <div class="field"><label>MAX DIP FROM PEAK % (0=off)</label><input type="number" id="s-curveMaxDipPct" value="32" min="0" oninput="save('curveMaxDipPct',+this.value)"></div>
       <div class="field"><label>MIN DISTANCE FROM PEAK % (0=off)</label><input type="number" id="s-curveMinFromPeakPct" value="10" min="0" oninput="save('curveMinFromPeakPct',+this.value)"></div>
@@ -511,18 +511,18 @@ const DEFAULTS = {
   privateKey:'', publicKey:'', solAmount:0.01, maxPositions:5,
   slippage:20, priorityFee:0.0001, cooldown:10, testMode:false, paperLatencyPct:2,
   pools:['pump'],
-  minMcap:10, maxMcap:500, minSolInPool:5, scamFilter:true,
-  tpEnabled:true, tpPct:12,
-  slEnabled:true, slPct:14,
-  trailEnabled:true, trailPct:15, trailActivatePct:5,
-  timerEnabled:true, timerMin:10,
+  minMcap:38, maxMcap:200, minSolInPool:1, scamFilter:true,
+  tpEnabled:true, tpPct:13,
+  slEnabled:true, slPct:16,
+  trailEnabled:true, trailPct:8, trailActivatePct:5,
+  timerEnabled:true, timerMin:8,
   flatlineEnabled:true, flatlineSeconds:20, flatlinePct:2,
-  scaleOutEnabled:false, scaleOutTp1Pct:20, scaleOutSellPct:50,
-  watchEnabled:true, watchSeconds:10, watchMinBuys:3, watchMinBuyers:3,
-  watchMinVelocitySecs:2, watchMaxVelocitySecs:26, watchMinSolVol:0, watchMinPumpPct:0, watchMaxPumpPct:90,
+  scaleOutEnabled:true, scaleOutTp1Pct:8, scaleOutSellPct:50,
+  watchEnabled:true, watchSeconds:60, watchMinBuys:5, watchMinBuyers:5,
+  watchMinVelocitySecs:1, watchMaxVelocitySecs:26, watchMinSolVol:0, watchMinPumpPct:0, watchMaxPumpPct:90,
   watchBotPumpPct:50, watchBotFillSecs:3,
   symCooldownEnabled:true, symCooldownSecs:300,
-  curveEnabled:false, curveObserveSecs:15, curveDipPct:8, curveRecoverPct:5, curveMaxDipPct:32, curveMinFromPeakPct:10, curveMaxBuyBuyerRatio:1.4,
+  curveEnabled:true, curveObserveSecs:15, curveDipPct:20, curveRecoverPct:20, curveMaxDipPct:32, curveMinFromPeakPct:10, curveMaxBuyBuyerRatio:1.4,
 };
 
 let cfg = { ...DEFAULTS };
@@ -540,6 +540,24 @@ function loadCfg() {
       curveDipPct:10, curveMaxDipPct:32,
       scaleOutEnabled:true, scaleOutTp1Pct:8, scaleOutSellPct:50,
       _v2:true, _v3:true, _v4:true, _v5:true
+    };
+    cfg = { ...cfg, ...migrate };
+    localStorage.setItem('drc_cfg', JSON.stringify(cfg));
+  }
+
+  // One-time migration v6: updated optimal defaults from live session data
+  if (!cfg._v6) {
+    const migrate = {
+      minMcap:38, maxMcap:200, minSolInPool:1,
+      tpPct:13, slPct:16, trailPct:8, trailActivatePct:5, timerMin:8,
+      scaleOutEnabled:true, scaleOutTp1Pct:8, scaleOutSellPct:50,
+      watchSeconds:60, watchMinBuys:5, watchMinBuyers:5,
+      watchMinVelocitySecs:1, watchMaxVelocitySecs:26, watchMaxPumpPct:90,
+      watchBotPumpPct:50, watchBotFillSecs:3,
+      curveEnabled:true, curveObserveSecs:15,
+      curveDipPct:20, curveRecoverPct:20, curveMaxDipPct:32,
+      curveMinFromPeakPct:10, curveMaxBuyBuyerRatio:1.4,
+      _v6:true
     };
     cfg = { ...cfg, ...migrate };
     localStorage.setItem('drc_cfg', JSON.stringify(cfg));
@@ -1000,6 +1018,16 @@ function handleWatchUpdate(ev) {
   }
 
   if (cfg.minMcap > 0 && entry.currentMcap > 0 && entry.currentMcap < cfg.minMcap) return;
+
+  // Reuse curveMinFromPeakPct as a general peak-distance guard (prevents buying at/near ATH)
+  if (cfg.curveMinFromPeakPct > 0 && entry.localHigh > 0) {
+    const fromPeak = (entry.localHigh - entry.currentPrice) / entry.localHigh * 100;
+    if (fromPeak < cfg.curveMinFromPeakPct) {
+      clearTimeout(entry.timer); watchlist.delete(mint);
+      addLog('skip', `SKIP ${tag} — too close to peak (${fromPeak.toFixed(1)}% < min ${cfg.curveMinFromPeakPct}%) → SKIP`);
+      renderWatchCards(); return;
+    }
+  }
 
   if (cfg.watchMinPumpPct > 0 && entry.initialPrice > 0) {
     const pumpPct = (entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100;
