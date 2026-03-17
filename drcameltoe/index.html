@@ -943,6 +943,12 @@ function handleWatchUpdate(ev) {
       clearTimeout(entry.timer); watchlist.delete(mint); renderWatchCards(); return;
     }
 
+    // Respect min/max MCAP at time of curve buy (token may have drifted since watch started)
+    if (cfg.minMcap > 0 && entry.currentMcap > 0 && entry.currentMcap < cfg.minMcap) {
+      addLog('skip', `SKIP ${tag} — mcap ${entry.currentMcap.toFixed(1)} < min ${cfg.minMcap}`);
+      clearTimeout(entry.timer); watchlist.delete(mint); renderWatchCards(); return;
+    }
+
     // Curve confirmed — buy
     clearTimeout(entry.timer);
     watchlist.delete(mint);
@@ -1304,7 +1310,15 @@ async function executeSell(mint, reason, attempt = 1) {
     }
 
     const data  = await res.json().catch(()=>({}));
-    const txSig = data?.signature || (Array.isArray(data) ? data[0]?.signature : null) || '?';
+    const txSig = data?.signature || (Array.isArray(data) ? data[0]?.signature : null) || null;
+
+    if (!txSig) {
+      // API returned 200 but no valid signature — treat as failure so card stays open
+      const errMsg = data?.error || data?.message || 'no signature in response';
+      addLog('error', `SELL FAILED ${pos.name} — ${errMsg}`);
+      pos.selling = false;
+      return;
+    }
 
     // Estimated PNL (price-based; real PNL comes from chain)
     const pnl    = pos.entryPrice > 0 ? (pos.currentPrice / pos.entryPrice - 1) * pos.solSpent : 0;
