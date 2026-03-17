@@ -182,6 +182,8 @@
     .card.closed .card-name { color: var(--grey); }
     .watch-bar-wrap { background: var(--bg3); height: 4px; margin-top: 6px; }
     .watch-bar { height: 4px; background: var(--amber); transition: width .5s linear; box-shadow: 0 0 6px var(--amber); }
+    .ready-bar-wrap { background: var(--bg3); height: 3px; margin-top: 2px; }
+    .ready-bar { height: 3px; background: #4caf50; transition: width .4s ease; box-shadow: 0 0 5px #4caf50; }
     .watch-stat { font-size: 11px; display: flex; justify-content: space-between; margin-top: 4px; }
     .watch-stat .hit { color: var(--green); }
     .sold-badge { font-size: 9px; letter-spacing: 1px; padding: 1px 5px; border: 1px solid var(--grey); color: var(--grey); }
@@ -1361,6 +1363,28 @@ function renderWatchCards() {
   }
 }
 
+function watchReadinessPct(entry) {
+  const factors = [];
+  if (cfg.watchMinBuys   > 0) factors.push(Math.min(entry.buyCount / cfg.watchMinBuys, 1));
+  if (cfg.watchMinBuyers > 0) factors.push(Math.min(entry.uniqueBuyers.size / cfg.watchMinBuyers, 1));
+
+  if (cfg.curveEnabled) {
+    const dipPct     = entry.localHigh > 0 ? (entry.localHigh - entry.localLow) / entry.localHigh * 100 : 0;
+    const recoverPct = entry.localLow  > 0 ? (entry.currentPrice - entry.localLow) / entry.localLow * 100 : 0;
+    if (cfg.curveDipPct     > 0) factors.push(Math.min(dipPct     / cfg.curveDipPct,     1));
+    if (cfg.curveRecoverPct > 0) factors.push(Math.min(recoverPct / cfg.curveRecoverPct, 1));
+  } else {
+    if (cfg.watchMinSolVol  > 0) factors.push(Math.min(entry.solVolume / cfg.watchMinSolVol, 1));
+    if (cfg.watchMinPumpPct > 0 && entry.initialPrice > 0) {
+      const pump = (entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100;
+      factors.push(Math.min(pump / cfg.watchMinPumpPct, 1));
+    }
+  }
+
+  if (factors.length === 0) return 0;
+  return Math.round(factors.reduce((a, b) => a + b, 0) / factors.length * 100);
+}
+
 function watchTrendLabel(entry) {
   const snaps = entry.priceSnapshots;
   if (snaps.length < 4) return '';
@@ -1440,6 +1464,7 @@ function buildWatchCard(entry, mint) {
       </div>
     </div>
     <div class="watch-bar-wrap"><div class="watch-bar" id="wbar-${mint}" style="width:${pct}%"></div></div>
+    <div class="ready-bar-wrap"><div class="ready-bar" id="rbar-${mint}" style="width:${watchReadinessPct(entry)}%"></div></div>
     <div class="watch-stat" id="wstat-${mint}">${watchCardStats(entry)}</div>
     <a class="dex-link" href="${dexUrl}" target="_blank">⟶ DEXSCREENER</a>`;
   return card;
@@ -1453,6 +1478,9 @@ function updateWatchCard(mint, entry) {
 
   const bar = document.getElementById('wbar-' + mint);
   if (bar) bar.style.width = pct + '%';
+
+  const rbar = document.getElementById('rbar-' + mint);
+  if (rbar) rbar.style.width = watchReadinessPct(entry) + '%';
 
   const stats = document.getElementById('wstat-' + mint);
   if (stats) stats.innerHTML = watchCardStats(entry);
