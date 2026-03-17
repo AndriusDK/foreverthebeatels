@@ -522,6 +522,21 @@ let cfg = { ...DEFAULTS };
 function loadCfg() {
   try { cfg = { ...DEFAULTS, ...JSON.parse(localStorage.getItem('drc_cfg') || '{}') }; }
   catch(e) { cfg = { ...DEFAULTS }; }
+
+  // One-time migration v2: apply recommended trading defaults
+  if (!cfg._v2) {
+    const migrate = {
+      tpPct:12, slPct:14, trailPct:15, trailActivatePct:6,
+      timerMin:8, maxMcap:200, watchMaxVelocitySecs:26,
+      watchMinSolVol:0.5, watchMaxPumpPct:70,
+      curveDipPct:10, curveMaxDipPct:32,
+      scaleOutEnabled:true, scaleOutTp1Pct:8, scaleOutSellPct:50,
+      _v2:true
+    };
+    cfg = { ...cfg, ...migrate };
+    localStorage.setItem('drc_cfg', JSON.stringify(cfg));
+  }
+
   applyToUI();
 }
 
