@@ -1180,6 +1180,10 @@ function handlePriceUpdate(ev) {
         if (Math.abs(pctEntry) < cfg.flatlinePct) triggerSell(mint, 'FLAT');
       }, cfg.flatlineSeconds * 1000);
     }
+
+    // Rebuild the card now that entry price is known — the initial render used 0.000
+    renderPositions();
+    return;
   }
 
   if (pos.selling) return;
