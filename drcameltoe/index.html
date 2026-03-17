@@ -1565,9 +1565,21 @@ function watchTrendLabel(entry) {
   const avgB   = snaps.slice(half).reduce((a,b)=>a+b,0) / (snaps.length - half);
   const slope  = entry.initialPrice > 0 ? (avgB - avgA) / entry.initialPrice * 100 : 0;
   const swing  = entry.initialPrice > 0 ? (entry.localHigh - entry.localLow) / entry.initialPrice * 100 : 0;
+
+  // Lower-highs downtrend: split snapshots into 3 thirds, check each peak is lower
+  let downtrend = false;
+  if (snaps.length >= 6) {
+    const t = Math.floor(snaps.length / 3);
+    const maxA = Math.max(...snaps.slice(0,  t));
+    const maxB = Math.max(...snaps.slice(t,  t*2));
+    const maxC = Math.max(...snaps.slice(t*2));
+    downtrend = maxA > maxB && maxB > maxC;
+  }
+
+  if (downtrend) return `<span style="color:#f44336;font-weight:bold">⬇DOWNTREND</span>`;
   if (swing > 25) return `<span style="color:#ff9800">⚡CHOPPY ${swing.toFixed(0)}%</span>`;
   if (slope >  4) return `<span style="color:#4caf50">↑CLIMBING +${slope.toFixed(1)}%</span>`;
-  if (slope < -3) return `<span style="color:#f44336">↓FADING ${slope.toFixed(1)}%</span>`;
+  if (slope < -3) return `<span style="color:#e57373">↓FADING ${slope.toFixed(1)}%</span>`;
   return `<span style="color:#888">→FLAT</span>`;
 }
 
