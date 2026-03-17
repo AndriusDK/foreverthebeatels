@@ -1160,6 +1160,12 @@ function handlePriceUpdate(ev) {
       return;
     }
 
+    // After partial sell: breakeven stop — never let the remaining half turn into a loss
+    if (pos.partialSold && pctEntry <= 0) {
+      triggerSell(mint, 'BE');
+      return;
+    }
+
     if (cfg.tpEnabled    && pctEntry >=  cfg.tpPct)    { triggerSell(mint, 'TP');    return; }
     if (cfg.slEnabled    && pctEntry <= -cfg.slPct)    { triggerSell(mint, 'SL');    return; }
     // Trail only activates once price is up cfg.trailActivatePct% (avoids noise near entry)
@@ -1201,6 +1207,8 @@ async function triggerPartialSell(mint) {
     session.history.push({ t: Date.now() - session.startedAt, pnl: session.pnl });
     pos.solSpent *= (1 - fraction);
     addLog('sell', `[PAPER] PARTIAL SOLD ${pos.name} [TP1 ${pct}%] ${fmtPnl(pnlPart)}`);
+    const badgeEl = document.getElementById('partial-badge-' + mint);
+    if (badgeEl) badgeEl.style.display = '';
     updateHeader(); drawGraph();
     return;
   }
@@ -1233,6 +1241,8 @@ async function triggerPartialSell(mint) {
     session.history.push({ t: Date.now() - session.startedAt, pnl: session.pnl });
     pos.solSpent *= (1 - fraction);  // remaining stake for full exit
     addLog('sell', `PARTIAL SOLD ${pos.name} [TP1 ${pct}%] +${pnlPart.toFixed(4)}◎ tx:${String(txSig).slice(0,20)}...`);
+    const badgeEl = document.getElementById('partial-badge-' + mint);
+    if (badgeEl) badgeEl.style.display = '';
     updateHeader(); drawGraph();
   } catch(e) {
     addLog('error', `PARTIAL SELL ERROR ${pos.name} — ${e.message}`);
@@ -1566,7 +1576,7 @@ function buildCard(pos, mint) {
   card.innerHTML = `
     <div class="card-top">
       <div>
-        <div class="card-name">${pos.name.slice(0,12).toUpperCase()}${pos.paper ? ' <span style="font-size:8px;background:#ff9800;color:#000;padding:1px 4px;border-radius:2px;vertical-align:middle">PAPER</span>' : ''}${pos.entryStats?.curveDip != null ? ' <span style="font-size:8px;background:var(--amber);color:#000;padding:1px 4px;border-radius:2px;vertical-align:middle">CURVE</span>' : ''}</div>
+        <div class="card-name">${pos.name.slice(0,12).toUpperCase()}${pos.paper ? ' <span style="font-size:8px;background:#ff9800;color:#000;padding:1px 4px;border-radius:2px;vertical-align:middle">PAPER</span>' : ''}${pos.entryStats?.curveDip != null ? ' <span style="font-size:8px;background:var(--amber);color:#000;padding:1px 4px;border-radius:2px;vertical-align:middle">CURVE</span>' : ''}${pos.partialSold && !isClosed ? ' <span style="font-size:8px;background:#9c27b0;color:#fff;padding:1px 4px;border-radius:2px;vertical-align:middle" id="partial-badge-${mint}">PARTIAL</span>' : `<span style="font-size:8px;background:#9c27b0;color:#fff;padding:1px 4px;border-radius:2px;vertical-align:middle;display:none" id="partial-badge-${mint}">PARTIAL</span>`}</div>
         <div class="card-pool">[${pos.pool}]</div>
       </div>
       <div style="text-align:right">
