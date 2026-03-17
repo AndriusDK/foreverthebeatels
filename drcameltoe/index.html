@@ -1454,20 +1454,6 @@ async function executeSell(mint, reason, attempt = 1) {
       return;
     }
 
-    // Wait for on-chain confirmation before closing position card
-    pos.confirming = true;
-    addLog('sell', `CONFIRMING ${pos.name} tx:${String(txSig).slice(0,20)}...`);
-    const confirmed = await confirmSolanaTx(txSig);
-    if (!confirmed) {
-      // TX reverted or expired on-chain — keep card open so user can retry
-      addLog('error', `SELL FAILED on-chain ${pos.name} — TX not confirmed, card restored`);
-      pos.selling    = false;
-      pos.confirming = false;
-      renderPositions();
-      return;
-    }
-    pos.confirming = false;
-
     // Estimated PNL (price-based; real PNL comes from chain)
     const pnl    = pos.entryPrice > 0 ? (pos.currentPrice / pos.entryPrice - 1) * pos.solSpent : 0;
     const solOut = pos.solSpent + pnl;
@@ -1817,7 +1803,7 @@ setInterval(() => {
     const btn = document.getElementById('sellbtn-' + mint);
     if (btn) {
       btn.disabled    = pos.selling;
-      btn.textContent = pos.confirming ? 'CONFIRMING…' : pos.selling ? 'SELLING…' : 'SELL';
+      btn.textContent = pos.selling ? 'SELLING…' : 'SELL';
     }
   });
   watchlist.forEach((entry, mint) => updateWatchCard(mint, entry));
