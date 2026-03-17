@@ -1363,6 +1363,33 @@ async function triggerPartialSell(mint) {
   }
 }
 
+// Poll Solana RPC to confirm a transaction on-chain.
+// Returns true if confirmed/finalized, false if TX errored or timed out.
+async function confirmSolanaTx(sig, maxAttempts = 12, intervalMs = 2000) {
+  const rpc = 'https://api.mainnet-beta.solana.com';
+  for (let i = 0; i < maxAttempts; i++) {
+    await sleep(intervalMs);
+    try {
+      const res = await fetch(rpc, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0', id: 1,
+          method: 'getSignatureStatuses',
+          params: [[sig], { searchTransactionHistory: true }]
+        })
+      });
+      const json = await res.json().catch(() => null);
+      const status = json?.result?.value?.[0];
+      if (status === null || status === undefined) continue; // not yet propagated
+      if (status.err) return false;                          // TX failed on-chain
+      if (status.confirmationStatus === 'confirmed' || status.confirmationStatus === 'finalized') return true;
+    } catch (_) { /* network hiccup — retry */ }
+  }
+  // Timed out — treat as failed to be safe
+  return false;
+}
+
 async function executeSell(mint, reason, attempt = 1) {
   const pos = positions.get(mint);
   if (!pos) return;
@@ -1426,6 +1453,20 @@ async function executeSell(mint, reason, attempt = 1) {
       pos.selling = false;
       return;
     }
+
+    // Wait for on-chain confirmation before closing position card
+    pos.confirming = true;
+    addLog('sell', `CONFIRMING ${pos.name} tx:${String(txSig).slice(0,20)}...`);
+    const confirmed = await confirmSolanaTx(txSig);
+    if (!confirmed) {
+      // TX reverted or expired on-chain — keep card open so user can retry
+      addLog('error', `SELL FAILED on-chain ${pos.name} — TX not confirmed, card restored`);
+      pos.selling    = false;
+      pos.confirming = false;
+      renderPositions();
+      return;
+    }
+    pos.confirming = false;
 
     // Estimated PNL (price-based; real PNL comes from chain)
     const pnl    = pos.entryPrice > 0 ? (pos.currentPrice / pos.entryPrice - 1) * pos.solSpent : 0;
@@ -1776,7 +1817,7 @@ setInterval(() => {
     const btn = document.getElementById('sellbtn-' + mint);
     if (btn) {
       btn.disabled    = pos.selling;
-      btn.textContent = pos.selling ? 'SELLING…' : 'SELL';
+      btn.textContent = pos.confirming ? 'CONFIRMING…' : pos.selling ? 'SELLING…' : 'SELL';
     }
   });
   watchlist.forEach((entry, mint) => updateWatchCard(mint, entry));
