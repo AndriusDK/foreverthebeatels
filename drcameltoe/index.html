@@ -430,6 +430,7 @@
         <div class="field"><label>MIN DUMP % (0=off)</label><input type="number" id="s-watchMinDumpPct" value="0" min="0" oninput="save('watchMinDumpPct',+this.value)"></div>
         <div class="field"><label>DUMP RECLAIM % (0=off)</label><input type="number" id="s-watchDumpReclaimPct" value="0" min="0" oninput="save('watchDumpReclaimPct',+this.value)"></div>
       </div>
+      <div class="field"><label>MAX DUMP RECLAIM % (0=off)</label><input type="number" id="s-watchMaxReclaimPct" value="0" min="0" oninput="save('watchMaxReclaimPct',+this.value)"></div>
       <div class="field"><label>MIN TIME AFTER LOW (SEC, 0=off)</label><input type="number" id="s-watchDumpReclaimMinSecs" value="3" min="0" step="0.5" oninput="save('watchDumpReclaimMinSecs',+this.value)"></div>
       <div class="field"><label>RECLAIM HOLD TIME (SEC, 0=off)</label><input type="number" id="s-watchReclaimHoldSecs" value="0" min="0" step="0.5" oninput="save('watchReclaimHoldSecs',+this.value)"></div>
       <div class="field"><label>MIN BUY/SELL RATIO (0=off)</label><input type="number" id="s-watchMinBSRatio" value="0" min="0" step="0.1" oninput="save('watchMinBSRatio',+this.value)"></div>
@@ -512,7 +513,7 @@ const DEFAULTS = {
   watchEnabled:true, watchSeconds:60, watchMinBuys:5, watchMinBuyers:5,
   watchMinVelocitySecs:1, watchMaxVelocitySecs:26, watchMinSolVol:0, watchMinPumpPct:0, watchMaxPumpPct:90,
   watchBotPumpPct:50, watchBotFillSecs:3,
-  watchMinDumpPct:0, watchDumpReclaimPct:0, watchDumpReclaimMinSecs:3, watchReclaimHoldSecs:0, watchMinBSRatio:0,
+  watchMinDumpPct:0, watchDumpReclaimPct:0, watchMaxReclaimPct:0, watchDumpReclaimMinSecs:3, watchReclaimHoldSecs:0, watchMinBSRatio:0,
   symCooldownEnabled:true, symCooldownSecs:300,
 };
 
@@ -568,6 +569,12 @@ function loadCfg() {
     localStorage.setItem('drc_cfg', JSON.stringify(cfg));
   }
 
+  // One-time migration v9: add max dump reclaim cap
+  if (!cfg._v9) {
+    cfg = { ...cfg, watchMaxReclaimPct: 0, _v9: true };
+    localStorage.setItem('drc_cfg', JSON.stringify(cfg));
+  }
+
   applyToUI();
 }
 
@@ -582,7 +589,7 @@ function applyToUI() {
    'minMcap','maxMcap','minSolInPool','tpPct','slPct','trailPct','trailActivatePct','timerMin',
    'flatlineSeconds','flatlinePct','scaleOutTp1Pct','scaleOutSellPct',
    'watchSeconds','watchMinBuys','watchMinBuyers','watchMinVelocitySecs','watchMaxVelocitySecs','watchMinSolVol','watchMinPumpPct','watchMaxPumpPct','watchBotPumpPct','watchBotFillSecs',
-   'watchMinDumpPct','watchDumpReclaimPct','watchDumpReclaimMinSecs','watchReclaimHoldSecs','watchMinBSRatio',
+   'watchMinDumpPct','watchDumpReclaimPct','watchMaxReclaimPct','watchDumpReclaimMinSecs','watchReclaimHoldSecs','watchMinBSRatio',
    'symCooldownSecs'].forEach(k => {
     const el = document.getElementById('s-'+k);
     if (el) el.value = cfg[k];
@@ -993,6 +1000,7 @@ function handleWatchUpdate(ev) {
   const reclaimPct = entry.localLow  > 0 ? (entry.currentPrice - entry.localLow) / entry.localLow * 100 : 0;
   if (cfg.watchMinDumpPct > 0 && dumpPct < cfg.watchMinDumpPct) return;                               // hasn't dumped enough yet
   if (cfg.watchDumpReclaimPct > 0 && reclaimPct < cfg.watchDumpReclaimPct) return;                    // hasn't reclaimed enough yet
+  if (cfg.watchMaxReclaimPct > 0 && reclaimPct > cfg.watchMaxReclaimPct) return;                      // over-recovered — at/near peak, wait for re-dip
   if (cfg.watchDumpReclaimMinSecs > 0 && (Date.now() - entry.localLowAt) < cfg.watchDumpReclaimMinSecs * 1000) return; // low too recent — wait
   if (cfg.watchReclaimHoldSecs > 0 && (!entry.reclaimSatisfiedAt || (Date.now() - entry.reclaimSatisfiedAt) < cfg.watchReclaimHoldSecs * 1000)) return; // reclaim not held long enough
   if (cfg.watchMinBSRatio > 0 && entry.sellCount > 0 && (entry.buyCount / entry.sellCount) < cfg.watchMinBSRatio) {
@@ -1495,12 +1503,18 @@ function watchCardStats(entry) {
     const reclaimPct = entry.localLow  > 0 ? (entry.currentPrice - entry.localLow) / entry.localLow * 100 : 0;
     const dumpHit    = cfg.watchMinDumpPct    <= 0 || dumpPct    >= cfg.watchMinDumpPct;
     const recHit     = cfg.watchDumpReclaimPct <= 0 || reclaimPct >= cfg.watchDumpReclaimPct;
-    const holdSecs   = entry.reclaimSatisfiedAt ? ((Date.now() - entry.reclaimSatisfiedAt) / 1000).toFixed(1) : null;
-    const holdHtml   = cfg.watchReclaimHoldSecs > 0 && recHit
+    const holdSecs      = entry.reclaimSatisfiedAt ? ((Date.now() - entry.reclaimSatisfiedAt) / 1000).toFixed(1) : null;
+    const holdHtml      = cfg.watchReclaimHoldSecs > 0 && recHit
       ? ` <span style="color:${holdSecs >= cfg.watchReclaimHoldSecs ? '#4caf50' : '#ff9800'}">[${holdSecs ?? 0}s/${cfg.watchReclaimHoldSecs}s]</span>`
       : '';
+    const overReclaimed = cfg.watchMaxReclaimPct > 0 && reclaimPct > cfg.watchMaxReclaimPct;
+    const recCap        = cfg.watchMaxReclaimPct > 0 ? `/${cfg.watchMaxReclaimPct}%` : '';
+    const fromPeak      = entry.localHigh > 0 ? ((entry.localHigh - entry.currentPrice) / entry.localHigh * 100) : 0;
+    const fromPeakHtml  = (cfg.watchMinDumpPct > 0 || cfg.watchDumpReclaimPct > 0)
+      ? ` <span style="color:${fromPeak < 1 ? '#f44336' : fromPeak < 5 ? '#ff9800' : '#4caf50'}">↓${fromPeak.toFixed(1)}%PEAK</span>`
+      : '';
     reclaimHtml = `<span class="${dumpHit?'hit':''}">DUMP:-${dumpPct.toFixed(1)}%${cfg.watchMinDumpPct>0?'/'+cfg.watchMinDumpPct+'%':''}</span>
-                   <span class="${recHit?'hit':''}">REC:+${reclaimPct.toFixed(1)}%${cfg.watchDumpReclaimPct>0?'/'+cfg.watchDumpReclaimPct+'%':''}${holdHtml}</span>`;
+                   <span class="${overReclaimed?'neg':recHit?'hit':''}">REC:+${reclaimPct.toFixed(1)}%${cfg.watchDumpReclaimPct>0?'/'+cfg.watchDumpReclaimPct+'%':''}${recCap}${holdHtml}${fromPeakHtml}</span>`;
   }
 
   return `<span class="${buysHit?'hit':''}">BUYS: ${entry.buyCount}/${cfg.watchMinBuys}</span>
