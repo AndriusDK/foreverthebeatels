@@ -434,6 +434,7 @@
       <div class="field"><label>MIN TIME AFTER LOW (SEC, 0=off)</label><input type="number" id="s-watchDumpReclaimMinSecs" value="3" min="0" step="0.5" oninput="save('watchDumpReclaimMinSecs',+this.value)"></div>
       <div class="field"><label>RECLAIM HOLD TIME (SEC, 0=off)</label><input type="number" id="s-watchReclaimHoldSecs" value="0" min="0" step="0.5" oninput="save('watchReclaimHoldSecs',+this.value)"></div>
       <div class="field"><label>MIN BUY/SELL RATIO (0=off)</label><input type="number" id="s-watchMinBSRatio" value="0" min="0" step="0.1" oninput="save('watchMinBSRatio',+this.value)"></div>
+      <div class="field"><label>MIN UNIQUE BUYER % (0=off)</label><input type="number" id="s-watchMinUniqueBuyerPct" value="0" min="0" max="100" oninput="save('watchMinUniqueBuyerPct',+this.value)"></div>
     </div>
 
     <div class="sec-head" onclick="toggleSec(this)">SYMBOL COOLDOWN <span>▾</span></div>
@@ -513,7 +514,7 @@ const DEFAULTS = {
   watchEnabled:true, watchSeconds:60, watchMinBuys:5, watchMinBuyers:5,
   watchMinVelocitySecs:1, watchMaxVelocitySecs:26, watchMinSolVol:0, watchMinPumpPct:0, watchMaxPumpPct:90,
   watchBotPumpPct:50, watchBotFillSecs:3,
-  watchMinDumpPct:0, watchDumpReclaimPct:0, watchMaxReclaimPct:0, watchDumpReclaimMinSecs:3, watchReclaimHoldSecs:0, watchMinBSRatio:0,
+  watchMinDumpPct:0, watchDumpReclaimPct:0, watchMaxReclaimPct:0, watchDumpReclaimMinSecs:3, watchReclaimHoldSecs:0, watchMinBSRatio:0, watchMinUniqueBuyerPct:0,
   symCooldownEnabled:true, symCooldownSecs:300,
 };
 
@@ -575,6 +576,12 @@ function loadCfg() {
     localStorage.setItem('drc_cfg', JSON.stringify(cfg));
   }
 
+  // One-time migration v10: add unique buyer concentration filter
+  if (!cfg._v10) {
+    cfg = { ...cfg, watchMinUniqueBuyerPct: 0, _v10: true };
+    localStorage.setItem('drc_cfg', JSON.stringify(cfg));
+  }
+
   applyToUI();
 }
 
@@ -589,7 +596,7 @@ function applyToUI() {
    'minMcap','maxMcap','minSolInPool','tpPct','slPct','trailPct','trailActivatePct','timerMin',
    'flatlineSeconds','flatlinePct','scaleOutTp1Pct','scaleOutSellPct',
    'watchSeconds','watchMinBuys','watchMinBuyers','watchMinVelocitySecs','watchMaxVelocitySecs','watchMinSolVol','watchMinPumpPct','watchMaxPumpPct','watchBotPumpPct','watchBotFillSecs',
-   'watchMinDumpPct','watchDumpReclaimPct','watchMaxReclaimPct','watchDumpReclaimMinSecs','watchReclaimHoldSecs','watchMinBSRatio',
+   'watchMinDumpPct','watchDumpReclaimPct','watchMaxReclaimPct','watchDumpReclaimMinSecs','watchReclaimHoldSecs','watchMinBSRatio','watchMinUniqueBuyerPct',
    'symCooldownSecs'].forEach(k => {
     const el = document.getElementById('s-'+k);
     if (el) el.value = cfg[k];
@@ -1007,6 +1014,14 @@ function handleWatchUpdate(ev) {
     clearTimeout(entry.timer); watchlist.delete(mint);
     addLog('skip', `SKIP ${tag} — B/S ratio ${(entry.buyCount/entry.sellCount).toFixed(1)}x < min ${cfg.watchMinBSRatio}x → distribution`);
     renderWatchCards(); return;
+  }
+  if (cfg.watchMinUniqueBuyerPct > 0 && entry.buyCount > 0) {
+    const uniquePct = entry.uniqueBuyers.size / entry.buyCount * 100;
+    if (uniquePct < cfg.watchMinUniqueBuyerPct) {
+      clearTimeout(entry.timer); watchlist.delete(mint);
+      addLog('skip', `SKIP ${tag} — unique buyer ratio ${uniquePct.toFixed(0)}% (${entry.uniqueBuyers.size}/${entry.buyCount}) < min ${cfg.watchMinUniqueBuyerPct}% → concentrated`);
+      renderWatchCards(); return;
+    }
   }
 
   clearTimeout(entry.timer);
@@ -1496,6 +1511,11 @@ function watchCardStats(entry) {
   const sellsHtml  = entry.sellCount > 0
     ? `<span style="color:#e57373">S:${entry.sellCount}/${entry.uniqueSellers.size}u</span> <span style="color:${bsOk?'#aaa':'#f44336'}">B/S:${bsRatioVal.toFixed(1)}${cfg.watchMinBSRatio>0?'/'+cfg.watchMinBSRatio:''}x</span>`
     : '';
+  const uniquePct    = entry.buyCount > 0 ? Math.round(entry.uniqueBuyers.size / entry.buyCount * 100) : 100;
+  const uniquePctOk  = cfg.watchMinUniqueBuyerPct <= 0 || uniquePct >= cfg.watchMinUniqueBuyerPct;
+  const concHtml     = entry.buyCount > 1
+    ? ` <span style="color:${uniquePctOk ? (uniquePct < 70 ? '#ff9800' : '#aaa') : '#f44336'}">U:${uniquePct}%${cfg.watchMinUniqueBuyerPct>0?'/'+cfg.watchMinUniqueBuyerPct+'%':''}</span>`
+    : '';
 
   let reclaimHtml = '';
   if (cfg.watchMinDumpPct > 0 || cfg.watchDumpReclaimPct > 0) {
@@ -1523,7 +1543,7 @@ function watchCardStats(entry) {
           ${reclaimHtml}
           ${trendHtml}
           ${entry.solVolume > 0 ? `<span>VOL:${entry.solVolume.toFixed(3)}◎</span>` : ''}
-          ${sellsHtml}`;
+          ${sellsHtml}${concHtml}`;
 }
 
 function watchCardLabel(entry) {
