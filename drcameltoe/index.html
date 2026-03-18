@@ -430,6 +430,7 @@
         <div class="field"><label>MIN DUMP % (0=off)</label><input type="number" id="s-watchMinDumpPct" value="0" min="0" oninput="save('watchMinDumpPct',+this.value)"></div>
         <div class="field"><label>DUMP RECLAIM % (0=off)</label><input type="number" id="s-watchDumpReclaimPct" value="0" min="0" oninput="save('watchDumpReclaimPct',+this.value)"></div>
       </div>
+      <div class="field"><label>MIN TIME AFTER LOW (SEC, 0=off)</label><input type="number" id="s-watchDumpReclaimMinSecs" value="3" min="0" step="0.5" oninput="save('watchDumpReclaimMinSecs',+this.value)"></div>
     </div>
 
     <div class="sec-head" onclick="toggleSec(this)">SYMBOL COOLDOWN <span>▾</span></div>
@@ -509,7 +510,7 @@ const DEFAULTS = {
   watchEnabled:true, watchSeconds:60, watchMinBuys:5, watchMinBuyers:5,
   watchMinVelocitySecs:1, watchMaxVelocitySecs:26, watchMinSolVol:0, watchMinPumpPct:0, watchMaxPumpPct:90,
   watchBotPumpPct:50, watchBotFillSecs:3,
-  watchMinDumpPct:0, watchDumpReclaimPct:0,
+  watchMinDumpPct:0, watchDumpReclaimPct:0, watchDumpReclaimMinSecs:3,
   symCooldownEnabled:true, symCooldownSecs:300,
 };
 
@@ -555,7 +556,7 @@ function loadCfg() {
   if (!cfg._v7) {
     const { curveEnabled, curveObserveSecs, curveDipPct, curveRecoverPct, curveMaxDipPct, curveMinFromPeakPct, curveMaxBuyBuyerRatio,
             momentumEnabled, momentumMinBuys, momentumMinBuyers, momentumMinPumpPct, ...rest } = cfg;
-    cfg = { ...rest, watchMinDumpPct: 0, watchDumpReclaimPct: 0, _v7: true };
+    cfg = { ...rest, watchMinDumpPct: 0, watchDumpReclaimPct: 0, watchDumpReclaimMinSecs: 3, _v7: true };
     localStorage.setItem('drc_cfg', JSON.stringify(cfg));
   }
 
@@ -573,7 +574,7 @@ function applyToUI() {
    'minMcap','maxMcap','minSolInPool','tpPct','slPct','trailPct','trailActivatePct','timerMin',
    'flatlineSeconds','flatlinePct','scaleOutTp1Pct','scaleOutSellPct',
    'watchSeconds','watchMinBuys','watchMinBuyers','watchMinVelocitySecs','watchMaxVelocitySecs','watchMinSolVol','watchMinPumpPct','watchMaxPumpPct','watchBotPumpPct','watchBotFillSecs',
-   'watchMinDumpPct','watchDumpReclaimPct',
+   'watchMinDumpPct','watchDumpReclaimPct','watchDumpReclaimMinSecs',
    'symCooldownSecs'].forEach(k => {
     const el = document.getElementById('s-'+k);
     if (el) el.value = cfg[k];
@@ -856,6 +857,7 @@ function handleCreate(ev) {
     currentMcap:  marketCapSol || 0,
     localHigh:    price || 0,
     localLow:     price || 0,
+    localLowAt:   Date.now(),
     buyCount:       0,
     uniqueBuyers:   new Set(),
     sellCount:      0,
@@ -887,7 +889,7 @@ function handleWatchUpdate(ev) {
   if (price) {
     entry.currentPrice = price;
     if (price > entry.localHigh) entry.localHigh = price;
-    if (price < entry.localLow)  entry.localLow  = price;
+    if (price < entry.localLow)  { entry.localLow = price; entry.localLowAt = Date.now(); }
     if (entry.initialPrice > 0 && entry.initialMcap > 0)
       entry.currentMcap = entry.initialMcap * (price / entry.initialPrice);
     entry.priceSnapshots.push(price);
@@ -972,6 +974,7 @@ function handleWatchUpdate(ev) {
   const reclaimPct = entry.localLow  > 0 ? (entry.currentPrice - entry.localLow) / entry.localLow * 100 : 0;
   if (cfg.watchMinDumpPct > 0 && dumpPct < cfg.watchMinDumpPct) return;         // hasn't dumped enough yet
   if (cfg.watchDumpReclaimPct > 0 && reclaimPct < cfg.watchDumpReclaimPct) return; // hasn't reclaimed enough yet
+  if (cfg.watchDumpReclaimMinSecs > 0 && (Date.now() - entry.localLowAt) < cfg.watchDumpReclaimMinSecs * 1000) return; // low too recent — wait
 
   clearTimeout(entry.timer);
   watchlist.delete(mint);
