@@ -426,6 +426,10 @@
         <div class="field"><label>BOT SPIKE PUMP % (0=off)</label><input type="number" id="s-watchBotPumpPct" value="50" min="0" oninput="save('watchBotPumpPct',+this.value)"></div>
         <div class="field"><label>BOT SPIKE MAX FILL (SEC)</label><input type="number" id="s-watchBotFillSecs" value="3" min="0" step="0.5" oninput="save('watchBotFillSecs',+this.value)"></div>
       </div>
+      <div class="row2">
+        <div class="field"><label>MIN DUMP % (0=off)</label><input type="number" id="s-watchMinDumpPct" value="0" min="0" oninput="save('watchMinDumpPct',+this.value)"></div>
+        <div class="field"><label>DUMP RECLAIM % (0=off)</label><input type="number" id="s-watchDumpReclaimPct" value="0" min="0" oninput="save('watchDumpReclaimPct',+this.value)"></div>
+      </div>
     </div>
 
     <div class="sec-head" onclick="toggleSec(this)">SYMBOL COOLDOWN <span>▾</span></div>
@@ -435,35 +439,6 @@
         <label class="tog"><input type="checkbox" id="s-symCooldownEnabled" checked onchange="save('symCooldownEnabled',this.checked)"><span class="tog-sl"></span></label>
       </div>
       <div class="field"><label>COOLDOWN AFTER TRADE (SEC)</label><input type="number" id="s-symCooldownSecs" value="300" min="10" oninput="save('symCooldownSecs',+this.value)"></div>
-    </div>
-
-    <div class="sec-head" onclick="toggleSec(this)">CURVE QUALITY (DIP+RECOVERY) <span>▾</span></div>
-    <div class="sec-body">
-      <div class="tog-wrap">
-        <label>ENABLED</label>
-        <label class="tog"><input type="checkbox" id="s-curveEnabled" checked onchange="save('curveEnabled',this.checked)"><span class="tog-sl"></span></label>
-      </div>
-      <div class="field"><label>OBSERVE FIRST (SEC)</label><input type="number" id="s-curveObserveSecs" value="15" min="1" oninput="save('curveObserveSecs',+this.value)"></div>
-      <div class="row2">
-        <div class="field"><label>MIN DIP FROM PEAK %</label><input type="number" id="s-curveDipPct" value="20" min="1" oninput="save('curveDipPct',+this.value)"></div>
-        <div class="field"><label>MIN RECOVER FROM LOW %</label><input type="number" id="s-curveRecoverPct" value="20" min="1" oninput="save('curveRecoverPct',+this.value)"></div>
-      </div>
-      <div class="field"><label>MAX DIP FROM PEAK % (0=off)</label><input type="number" id="s-curveMaxDipPct" value="32" min="0" oninput="save('curveMaxDipPct',+this.value)"></div>
-      <div class="field"><label>MIN DISTANCE FROM PEAK % (0=off)</label><input type="number" id="s-curveMinFromPeakPct" value="10" min="0" oninput="save('curveMinFromPeakPct',+this.value)"></div>
-      <div class="field"><label>MAX BUYS/BUYER RATIO (0=off)</label><input type="number" id="s-curveMaxBuyBuyerRatio" value="1.4" min="0" step="0.1" oninput="save('curveMaxBuyBuyerRatio',+this.value)"></div>
-    </div>
-
-    <div class="sec-head" onclick="toggleSec(this)">MOMENTUM BUY (pump without dip) <span>▾</span></div>
-    <div class="sec-body">
-      <div class="tog-wrap">
-        <label>ENABLED</label>
-        <label class="tog"><input type="checkbox" id="s-momentumEnabled" onchange="save('momentumEnabled',this.checked)"><span class="tog-sl"></span></label>
-      </div>
-      <div class="row2">
-        <div class="field"><label>MIN BUYS</label><input type="number" id="s-momentumMinBuys" value="15" min="1" oninput="save('momentumMinBuys',+this.value)"></div>
-        <div class="field"><label>MIN BUYERS</label><input type="number" id="s-momentumMinBuyers" value="15" min="1" oninput="save('momentumMinBuyers',+this.value)"></div>
-      </div>
-      <div class="field"><label>MIN PUMP % (0=off)</label><input type="number" id="s-momentumMinPumpPct" value="20" min="0" oninput="save('momentumMinPumpPct',+this.value)"></div>
     </div>
 
     <button id="start-btn" onclick="toggleBot()">▶ START BOT</button>
@@ -534,9 +509,8 @@ const DEFAULTS = {
   watchEnabled:true, watchSeconds:60, watchMinBuys:5, watchMinBuyers:5,
   watchMinVelocitySecs:1, watchMaxVelocitySecs:26, watchMinSolVol:0, watchMinPumpPct:0, watchMaxPumpPct:90,
   watchBotPumpPct:50, watchBotFillSecs:3,
+  watchMinDumpPct:0, watchDumpReclaimPct:0,
   symCooldownEnabled:true, symCooldownSecs:300,
-  curveEnabled:true, curveObserveSecs:15, curveDipPct:20, curveRecoverPct:20, curveMaxDipPct:32, curveMinFromPeakPct:10, curveMaxBuyBuyerRatio:1.4,
-  momentumEnabled:false, momentumMinBuys:15, momentumMinBuyers:15, momentumMinPumpPct:20,
 };
 
 let cfg = { ...DEFAULTS };
@@ -577,6 +551,13 @@ function loadCfg() {
     localStorage.setItem('drc_cfg', JSON.stringify(cfg));
   }
 
+  // One-time migration v7: remove curve/momentum, add dump reclaim fields
+  if (!cfg._v7) {
+    const { curveEnabled, curveObserveSecs, curveDipPct, curveRecoverPct, curveMaxDipPct, curveMinFromPeakPct, curveMaxBuyBuyerRatio,
+            momentumEnabled, momentumMinBuys, momentumMinBuyers, momentumMinPumpPct, ...rest } = cfg;
+    cfg = { ...rest, watchMinDumpPct: 0, watchDumpReclaimPct: 0, _v7: true };
+    localStorage.setItem('drc_cfg', JSON.stringify(cfg));
+  }
 
   applyToUI();
 }
@@ -592,15 +573,14 @@ function applyToUI() {
    'minMcap','maxMcap','minSolInPool','tpPct','slPct','trailPct','trailActivatePct','timerMin',
    'flatlineSeconds','flatlinePct','scaleOutTp1Pct','scaleOutSellPct',
    'watchSeconds','watchMinBuys','watchMinBuyers','watchMinVelocitySecs','watchMaxVelocitySecs','watchMinSolVol','watchMinPumpPct','watchMaxPumpPct','watchBotPumpPct','watchBotFillSecs',
-   'symCooldownSecs',
-   'curveObserveSecs','curveDipPct','curveRecoverPct','curveMaxDipPct','curveMinFromPeakPct','curveMaxBuyBuyerRatio',
-   'momentumMinBuys','momentumMinBuyers','momentumMinPumpPct'].forEach(k => {
+   'watchMinDumpPct','watchDumpReclaimPct',
+   'symCooldownSecs'].forEach(k => {
     const el = document.getElementById('s-'+k);
     if (el) el.value = cfg[k];
   });
   const feeEl = document.getElementById('s-priorityFee');
   if (feeEl) feeEl.value = cfg.priorityFee;
-  ['testMode','scamFilter','tpEnabled','slEnabled','trailEnabled','timerEnabled','flatlineEnabled','scaleOutEnabled','watchEnabled','symCooldownEnabled','curveEnabled','momentumEnabled'].forEach(k => {
+  ['testMode','scamFilter','tpEnabled','slEnabled','trailEnabled','timerEnabled','flatlineEnabled','scaleOutEnabled','watchEnabled','symCooldownEnabled'].forEach(k => {
     const el = document.getElementById('s-'+k);
     if (el) el.checked = cfg[k];
   });
@@ -959,150 +939,26 @@ function handleWatchUpdate(ev) {
     }
   }
 
-  // ── MOMENTUM BUY ─────────────────────────────────────────────
-  if (cfg.momentumEnabled &&
-      entry.buyCount >= cfg.momentumMinBuys &&
-      entry.uniqueBuyers.size >= cfg.momentumMinBuyers) {
-
-    if (cfg.watchMinVelocitySecs > 0 && elapsed < cfg.watchMinVelocitySecs) {
-      clearTimeout(entry.timer); watchlist.delete(mint);
-      addLog('skip', `BOT ${tag} — confirmed in ${elapsed.toFixed(1)}s (min ${cfg.watchMinVelocitySecs}s) → SKIP`);
-      renderWatchCards(); return;
-    }
-    if (cfg.watchMaxVelocitySecs > 0 && elapsed > cfg.watchMaxVelocitySecs) {
-      clearTimeout(entry.timer); watchlist.delete(mint);
-      addLog('skip', `SLOW ${tag} — ${elapsed.toFixed(1)}s to confirm (max ${cfg.watchMaxVelocitySecs}s) → SKIP`);
-      renderWatchCards(); return;
-    }
-    if (cfg.minMcap > 0 && entry.currentMcap > 0 && entry.currentMcap < cfg.minMcap) {
-      clearTimeout(entry.timer); watchlist.delete(mint);
-      addLog('skip', `SKIP ${tag} — mcap ${entry.currentMcap.toFixed(1)} < min ${cfg.minMcap}`);
-      renderWatchCards(); return;
-    }
-    if (cfg.curveMinFromPeakPct > 0 && entry.localHigh > 0) {
-      const fromPeak = (entry.localHigh - entry.currentPrice) / entry.localHigh * 100;
-      if (fromPeak < cfg.curveMinFromPeakPct) {
-        clearTimeout(entry.timer); watchlist.delete(mint);
-        addLog('skip', `SKIP ${tag} — too close to peak (${fromPeak.toFixed(1)}% < min ${cfg.curveMinFromPeakPct}%) → SKIP`);
-        renderWatchCards(); return;
-      }
-    }
-    const pumpPct = entry.initialPrice > 0 ? (entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100 : 0;
-    if (cfg.momentumMinPumpPct > 0 && pumpPct < cfg.momentumMinPumpPct) return; // not enough pump yet — wait
-
-    clearTimeout(entry.timer);
-    watchlist.delete(mint);
-    const entryFromPeak = entry.localHigh > 0 ? +((entry.localHigh - entry.currentPrice) / entry.localHigh * 100).toFixed(1) : 0;
-    addLog('buy', `MOMENTUM ${tag} — ${entry.buyCount}b/${entry.uniqueBuyers.size}u/${elapsed.toFixed(1)}s pump:+${pumpPct.toFixed(1)}% → BUYING`);
-    renderWatchCards();
-    executeBuy(entry.ev, {
-      mcapSol:      entry.currentMcap || entry.ev.marketCapSol || 0,
-      poolSol:      entry.ev.solInPool    || 0,
-      buys:         entry.buyCount,
-      buyers:       entry.uniqueBuyers.size,
-      velocitySecs: +elapsed.toFixed(1),
-      solVol:       +entry.solVolume.toFixed(4),
-      pumpPct:      +pumpPct.toFixed(1),
-      entryFromPeak,
-      momentumBuy:  true,
-    });
-    return;
-  }
-
-  // ── CURVE MODE ──────────────────────────────────────────────
-  if (cfg.curveEnabled) {
-    // Phase 1: pure observation — just collect data
-    if (elapsed < cfg.curveObserveSecs) return;
-
-    // Phase 2: need minimum buyer activity
-    if (entry.buyCount < cfg.watchMinBuys || entry.uniqueBuyers.size < cfg.watchMinBuyers) return;
-
-    // Curve check: token must have formed a peak, dipped, and recovered
-    const dipPct     = entry.localHigh > 0 ? (entry.localHigh - entry.localLow) / entry.localHigh * 100 : 0;
-    const recoverPct = entry.localLow  > 0 ? (entry.currentPrice - entry.localLow) / entry.localLow * 100 : 0;
-
-    if (dipPct < cfg.curveDipPct) return;       // no consolidation yet
-    if (recoverPct < cfg.curveRecoverPct) return; // still in the dip
-    if (cfg.curveMaxDipPct > 0 && dipPct > cfg.curveMaxDipPct) {
-      addLog('skip', `SKIP ${tag} — dip ${dipPct.toFixed(1)}% > max ${cfg.curveMaxDipPct}%`);
-      clearTimeout(entry.timer); watchlist.delete(mint); renderWatchCards(); return;
-    }
-
-    const entryFromPeak = entry.localHigh > 0 ? (entry.localHigh - entry.currentPrice) / entry.localHigh * 100 : 0;
-    if (cfg.curveMinFromPeakPct > 0 && entryFromPeak < cfg.curveMinFromPeakPct) {
-      addLog('skip', `SKIP ${tag} — too close to peak (${entryFromPeak.toFixed(1)}% < min ${cfg.curveMinFromPeakPct}%) → SKIP`);
-      clearTimeout(entry.timer); watchlist.delete(mint); renderWatchCards(); return;
-    }
-
-    // Respect min/max MCAP at time of curve buy (token may have drifted since watch started)
-    if (cfg.minMcap > 0 && entry.currentMcap > 0 && entry.currentMcap < cfg.minMcap) {
-      addLog('skip', `SKIP ${tag} — mcap ${entry.currentMcap.toFixed(1)} < min ${cfg.minMcap}`);
-      clearTimeout(entry.timer); watchlist.delete(mint); renderWatchCards(); return;
-    }
-
-    // Bot-wash filter: skip if average buys per buyer exceeds threshold (repeated buys = bots)
-    if (cfg.curveMaxBuyBuyerRatio > 0 && entry.uniqueBuyers.size > 0) {
-      const ratio = entry.buyCount / entry.uniqueBuyers.size;
-      if (ratio > cfg.curveMaxBuyBuyerRatio) {
-        addLog('skip', `SKIP ${tag} — bot buys ratio ${ratio.toFixed(2)}x > max ${cfg.curveMaxBuyBuyerRatio}x`);
-        clearTimeout(entry.timer); watchlist.delete(mint); renderWatchCards(); return;
-      }
-    }
-
-    // Curve confirmed — buy
-    clearTimeout(entry.timer);
-    watchlist.delete(mint);
-    addLog('buy', `CURVE ${tag} — dip:-${dipPct.toFixed(1)}% rec:+${recoverPct.toFixed(1)}% (${entry.buyCount}b/${entry.uniqueBuyers.size}u/${elapsed.toFixed(1)}s) → BUYING`);
-    renderWatchCards();
-    executeBuy(entry.ev, {
-      mcapSol:      entry.currentMcap || entry.ev.marketCapSol || 0,
-      poolSol:      entry.ev.solInPool || 0,
-      buys:         entry.buyCount,
-      buyers:       entry.uniqueBuyers.size,
-      velocitySecs: +elapsed.toFixed(1),
-      solVol:       +entry.solVolume.toFixed(4),
-      curveDip:      +dipPct.toFixed(1),
-      curveRecover:  +recoverPct.toFixed(1),
-      entryFromPeak: entry.localHigh > 0 ? +((entry.localHigh - entry.currentPrice) / entry.localHigh * 100).toFixed(1) : 0,
-    });
-    return;
-  }
-
-  // ── STANDARD MODE ───────────────────────────────────────────
-  // When momentum mode is active, only the momentum trigger above should buy — never fall through here
-  if (cfg.momentumEnabled) return;
-
+  // ── OBSERVATION MODE ────────────────────────────────────────
   if (entry.buyCount < cfg.watchMinBuys || entry.uniqueBuyers.size < cfg.watchMinBuyers) return;
 
-  const velocitySecs = elapsed;
-
-  if (cfg.watchMinVelocitySecs > 0 && velocitySecs < cfg.watchMinVelocitySecs) {
+  if (cfg.watchMinVelocitySecs > 0 && elapsed < cfg.watchMinVelocitySecs) {
     clearTimeout(entry.timer);
     watchlist.delete(mint);
-    addLog('skip', `BOT ${tag} — confirmed in ${velocitySecs.toFixed(1)}s (min ${cfg.watchMinVelocitySecs}s) → SKIP`);
+    addLog('skip', `BOT ${tag} — confirmed in ${elapsed.toFixed(1)}s (min ${cfg.watchMinVelocitySecs}s) → SKIP`);
     renderWatchCards();
     return;
   }
 
-  if (cfg.watchMaxVelocitySecs > 0 && velocitySecs > cfg.watchMaxVelocitySecs) {
+  if (cfg.watchMaxVelocitySecs > 0 && elapsed > cfg.watchMaxVelocitySecs) {
     clearTimeout(entry.timer);
     watchlist.delete(mint);
-    addLog('skip', `SLOW ${tag} — ${velocitySecs.toFixed(1)}s to confirm (max ${cfg.watchMaxVelocitySecs}s) → SKIP`);
+    addLog('skip', `SLOW ${tag} — ${elapsed.toFixed(1)}s to confirm (max ${cfg.watchMaxVelocitySecs}s) → SKIP`);
     renderWatchCards();
     return;
   }
 
   if (cfg.minMcap > 0 && entry.currentMcap > 0 && entry.currentMcap < cfg.minMcap) return;
-
-  // Reuse curveMinFromPeakPct as a general peak-distance guard (prevents buying at/near ATH)
-  if (cfg.curveMinFromPeakPct > 0 && entry.localHigh > 0) {
-    const fromPeak = (entry.localHigh - entry.currentPrice) / entry.localHigh * 100;
-    if (fromPeak < cfg.curveMinFromPeakPct) {
-      clearTimeout(entry.timer); watchlist.delete(mint);
-      addLog('skip', `SKIP ${tag} — too close to peak (${fromPeak.toFixed(1)}% < min ${cfg.curveMinFromPeakPct}%) → SKIP`);
-      renderWatchCards(); return;
-    }
-  }
 
   if (cfg.watchMinPumpPct > 0 && entry.initialPrice > 0) {
     const pumpPct = (entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100;
@@ -1111,19 +967,28 @@ function handleWatchUpdate(ev) {
 
   if (cfg.watchMinSolVol > 0 && entry.solVolume < cfg.watchMinSolVol) return;
 
+  // ── DUMP RECLAIM (optional — both 0 = off) ──────────────────
+  const dumpPct    = entry.localHigh > 0 ? (entry.localHigh - entry.localLow) / entry.localHigh * 100 : 0;
+  const reclaimPct = entry.localLow  > 0 ? (entry.currentPrice - entry.localLow) / entry.localLow * 100 : 0;
+  if (cfg.watchMinDumpPct > 0 && dumpPct < cfg.watchMinDumpPct) return;         // hasn't dumped enough yet
+  if (cfg.watchDumpReclaimPct > 0 && reclaimPct < cfg.watchDumpReclaimPct) return; // hasn't reclaimed enough yet
+
   clearTimeout(entry.timer);
   watchlist.delete(mint);
   const pumpPct = entry.initialPrice > 0 ? (entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100 : 0;
-  addLog('buy', `CONFIRMED ${tag} — ${entry.buyCount} buys / ${entry.uniqueBuyers.size} buyers / ${velocitySecs.toFixed(1)}s${entry.solVolume > 0 ? ' / ' + entry.solVolume.toFixed(3) + '◎' : ''} → BUYING`);
+  const isReclaim = (cfg.watchMinDumpPct > 0 || cfg.watchDumpReclaimPct > 0);
+  const label = isReclaim ? `RECLAIM ${tag} — dump:-${dumpPct.toFixed(1)}% rec:+${reclaimPct.toFixed(1)}%` : `CONFIRMED ${tag}`;
+  addLog('buy', `${label} — ${entry.buyCount}b/${entry.uniqueBuyers.size}u/${elapsed.toFixed(1)}s${entry.solVolume > 0 ? ' / ' + entry.solVolume.toFixed(3) + '◎' : ''} → BUYING`);
   renderWatchCards();
   executeBuy(entry.ev, {
     mcapSol:      entry.currentMcap || entry.ev.marketCapSol || 0,
     poolSol:      entry.ev.solInPool    || 0,
     buys:         entry.buyCount,
     buyers:       entry.uniqueBuyers.size,
-    velocitySecs: +velocitySecs.toFixed(1),
+    velocitySecs: +elapsed.toFixed(1),
     solVol:       +entry.solVolume.toFixed(4),
-    pumpPct:       +pumpPct.toFixed(1),
+    pumpPct:      +pumpPct.toFixed(1),
+    ...(isReclaim ? { dumpPct: +dumpPct.toFixed(1), reclaimPct: +reclaimPct.toFixed(1) } : {}),
     entryFromPeak: entry.localHigh > 0 ? +((entry.localHigh - entry.currentPrice) / entry.localHigh * 100).toFixed(1) : 0,
   });
 }
@@ -1540,33 +1405,21 @@ function renderWatchCards() {
 
 function watchReadinessPct(entry) {
   const factors = [];
-
-  if (cfg.momentumEnabled && !cfg.curveEnabled) {
-    // Readiness tracks progress toward momentum thresholds
-    if (cfg.momentumMinBuys   > 0) factors.push(Math.min(entry.buyCount / cfg.momentumMinBuys, 1));
-    if (cfg.momentumMinBuyers > 0) factors.push(Math.min(entry.uniqueBuyers.size / cfg.momentumMinBuyers, 1));
-    if (cfg.momentumMinPumpPct > 0 && entry.initialPrice > 0) {
-      const pump = (entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100;
-      factors.push(Math.min(pump / cfg.momentumMinPumpPct, 1));
-    }
-  } else {
-    if (cfg.watchMinBuys   > 0) factors.push(Math.min(entry.buyCount / cfg.watchMinBuys, 1));
-    if (cfg.watchMinBuyers > 0) factors.push(Math.min(entry.uniqueBuyers.size / cfg.watchMinBuyers, 1));
-
-    if (cfg.curveEnabled) {
-      const dipPct     = entry.localHigh > 0 ? (entry.localHigh - entry.localLow) / entry.localHigh * 100 : 0;
-      const recoverPct = entry.localLow  > 0 ? (entry.currentPrice - entry.localLow) / entry.localLow * 100 : 0;
-      if (cfg.curveDipPct     > 0) factors.push(Math.min(dipPct     / cfg.curveDipPct,     1));
-      if (cfg.curveRecoverPct > 0) factors.push(Math.min(recoverPct / cfg.curveRecoverPct, 1));
-    } else {
-      if (cfg.watchMinSolVol  > 0) factors.push(Math.min(entry.solVolume / cfg.watchMinSolVol, 1));
-      if (cfg.watchMinPumpPct > 0 && entry.initialPrice > 0) {
-        const pump = (entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100;
-        factors.push(Math.min(pump / cfg.watchMinPumpPct, 1));
-      }
-    }
+  if (cfg.watchMinBuys   > 0) factors.push(Math.min(entry.buyCount / cfg.watchMinBuys, 1));
+  if (cfg.watchMinBuyers > 0) factors.push(Math.min(entry.uniqueBuyers.size / cfg.watchMinBuyers, 1));
+  if (cfg.watchMinSolVol > 0) factors.push(Math.min(entry.solVolume / cfg.watchMinSolVol, 1));
+  if (cfg.watchMinPumpPct > 0 && entry.initialPrice > 0) {
+    const pump = (entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100;
+    factors.push(Math.min(pump / cfg.watchMinPumpPct, 1));
   }
-
+  if (cfg.watchMinDumpPct > 0) {
+    const dumpPct = entry.localHigh > 0 ? (entry.localHigh - entry.localLow) / entry.localHigh * 100 : 0;
+    factors.push(Math.min(dumpPct / cfg.watchMinDumpPct, 1));
+  }
+  if (cfg.watchDumpReclaimPct > 0) {
+    const reclaimPct = entry.localLow > 0 ? (entry.currentPrice - entry.localLow) / entry.localLow * 100 : 0;
+    factors.push(Math.min(reclaimPct / cfg.watchDumpReclaimPct, 1));
+  }
   if (factors.length === 0) return 0;
   return Math.round(factors.reduce((a, b) => a + b, 0) / factors.length * 100);
 }
@@ -1598,72 +1451,29 @@ function watchTrendLabel(entry) {
 }
 
 function watchCardStats(entry) {
-  const elapsed    = (Date.now() - entry.startedAt) / 1000;
-  const pricePct   = entry.initialPrice > 0 ? ((entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100).toFixed(1) : '0.0';
-  const buysHit    = entry.buyCount >= cfg.watchMinBuys;
-  const buyrsHit   = entry.uniqueBuyers.size >= cfg.watchMinBuyers;
-
-  // Momentum helpers
-  const momBuysHit  = entry.buyCount >= cfg.momentumMinBuys;
-  const momBuyrsHit = entry.uniqueBuyers.size >= cfg.momentumMinBuyers;
-  const momPumpHit  = cfg.momentumMinPumpPct > 0 && entry.initialPrice > 0
-    ? (entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100 >= cfg.momentumMinPumpPct
-    : true;
-  // momRow: only used alongside curve mode (standard mode uses momentum targets directly)
-  const momRow = cfg.momentumEnabled
-    ? `<span style="color:#2196F3">MOM:</span> <span class="${momBuysHit?'hit':''}">B:${entry.buyCount}/${cfg.momentumMinBuys}</span> <span class="${momBuyrsHit?'hit':''}">U:${entry.uniqueBuyers.size}/${cfg.momentumMinBuyers}</span>${cfg.momentumMinPumpPct>0?' <span class="'+(momPumpHit?'hit':'')+'">'+(+pricePct>=0?'+':'')+pricePct+'%/'+cfg.momentumMinPumpPct+'%</span>':''}`
-    : '';
-
-  if (cfg.curveEnabled) {
-    const inObserve  = elapsed < cfg.curveObserveSecs;
-    const dipPct     = entry.localHigh > 0 ? (entry.localHigh - entry.localLow) / entry.localHigh * 100 : 0;
-    const recoverPct = entry.localLow  > 0 ? (entry.currentPrice - entry.localLow) / entry.localLow * 100 : 0;
-    const dipHit     = dipPct >= cfg.curveDipPct;
-    const recHit     = recoverPct >= cfg.curveRecoverPct;
-    if (inObserve) {
-      const bsR = entry.sellCount > 0 ? (entry.buyCount / entry.sellCount).toFixed(1) : null;
-      return `<span class="${buysHit?'hit':''}">BUYS:${entry.buyCount}</span>
-              <span class="${buyrsHit?'hit':''}">U:${entry.uniqueBuyers.size}</span>
-              <span class="${+pricePct>0?'pos':'neg'}">Δ${pricePct}%</span>
-              ${entry.solVolume > 0 ? `<span>VOL:${entry.solVolume.toFixed(3)}◎</span>` : ''}
-              ${entry.sellCount > 0 ? `<span style="color:#e57373">S:${entry.sellCount}/${entry.uniqueSellers.size}u</span>${bsR ? ` <span style="color:#aaa">B/S:${bsR}</span>` : ''}` : ''}
-              ${momRow}`;
-    }
-    if (!dipHit) {
-      return `<span>WAIT DIP (-${cfg.curveDipPct}%) cur:${dipPct.toFixed(1)}%</span>
-              <span class="${buysHit?'hit':''}">B:${entry.buyCount}/${cfg.watchMinBuys}</span>
-              ${momRow}`;
-    }
-    return `<span class="hit">DIP:-${dipPct.toFixed(1)}%</span>
-            <span class="${recHit?'hit':''}">REC:+${recoverPct.toFixed(1)}%/+${cfg.curveRecoverPct}%</span>
-            <span class="${buysHit?'hit':''}">B:${entry.buyCount}/${cfg.watchMinBuys}</span>
-            <span class="${buyrsHit?'hit':''}">U:${entry.uniqueBuyers.size}/${cfg.watchMinBuyers}</span>
-            <span>${Math.floor(elapsed)}s</span>
-            ${momRow}`;
-  }
-
-  const trendHtml  = watchTrendLabel(entry);
-  const bsRatio    = entry.sellCount > 0 ? (entry.buyCount / entry.sellCount).toFixed(1) : null;
-  const sellsHtml  = entry.sellCount > 0
+  const pricePct  = entry.initialPrice > 0 ? ((entry.currentPrice - entry.initialPrice) / entry.initialPrice * 100).toFixed(1) : '0.0';
+  const buysHit   = entry.buyCount >= cfg.watchMinBuys;
+  const buyrsHit  = entry.uniqueBuyers.size >= cfg.watchMinBuyers;
+  const trendHtml = watchTrendLabel(entry);
+  const bsRatio   = entry.sellCount > 0 ? (entry.buyCount / entry.sellCount).toFixed(1) : null;
+  const sellsHtml = entry.sellCount > 0
     ? `<span style="color:#e57373">S:${entry.sellCount}/${entry.uniqueSellers.size}u</span>${bsRatio ? ` <span style="color:#aaa">B/S:${bsRatio}</span>` : ''}`
     : '';
 
-  // In momentum mode: use momentum thresholds as primary targets; show pump progress separately
-  if (cfg.momentumEnabled) {
-    const pumpHtml = cfg.momentumMinPumpPct > 0
-      ? ` <span class="${momPumpHit?'hit':''}">${+pricePct>=0?'+':''}${pricePct}%/${cfg.momentumMinPumpPct}%</span>`
-      : `<span class="${+pricePct>0?'pos':'neg'}">Δ${pricePct}%</span>`;
-    return `<span class="${momBuysHit?'hit':''}">BUYS: ${entry.buyCount}/${cfg.momentumMinBuys}</span>
-            <span class="${momBuyrsHit?'hit':''}">BUYERS: ${entry.uniqueBuyers.size}/${cfg.momentumMinBuyers}</span>
-            ${pumpHtml}
-            ${trendHtml}
-            ${entry.solVolume > 0 ? `<span>VOL:${entry.solVolume.toFixed(3)}◎</span>` : ''}
-            ${sellsHtml}`;
+  let reclaimHtml = '';
+  if (cfg.watchMinDumpPct > 0 || cfg.watchDumpReclaimPct > 0) {
+    const dumpPct    = entry.localHigh > 0 ? (entry.localHigh - entry.localLow) / entry.localHigh * 100 : 0;
+    const reclaimPct = entry.localLow  > 0 ? (entry.currentPrice - entry.localLow) / entry.localLow * 100 : 0;
+    const dumpHit    = cfg.watchMinDumpPct    <= 0 || dumpPct    >= cfg.watchMinDumpPct;
+    const recHit     = cfg.watchDumpReclaimPct <= 0 || reclaimPct >= cfg.watchDumpReclaimPct;
+    reclaimHtml = `<span class="${dumpHit?'hit':''}">DUMP:-${dumpPct.toFixed(1)}%${cfg.watchMinDumpPct>0?'/'+cfg.watchMinDumpPct+'%':''}</span>
+                   <span class="${recHit?'hit':''}">REC:+${reclaimPct.toFixed(1)}%${cfg.watchDumpReclaimPct>0?'/'+cfg.watchDumpReclaimPct+'%':''}</span>`;
   }
 
   return `<span class="${buysHit?'hit':''}">BUYS: ${entry.buyCount}/${cfg.watchMinBuys}</span>
           <span class="${buyrsHit?'hit':''}">BUYERS: ${entry.uniqueBuyers.size}/${cfg.watchMinBuyers}</span>
           <span class="${+pricePct>0?'pos':'neg'}">Δ${pricePct}%</span>
+          ${reclaimHtml}
           ${trendHtml}
           ${entry.solVolume > 0 ? `<span>VOL:${entry.solVolume.toFixed(3)}◎</span>` : ''}
           ${sellsHtml}`;
@@ -1672,12 +1482,6 @@ function watchCardStats(entry) {
 function watchCardLabel(entry) {
   const elapsed  = (Date.now() - entry.startedAt) / 1000;
   const timeLeft = Math.max(0, cfg.watchSeconds - Math.floor(elapsed));
-  if (cfg.momentumEnabled && entry.buyCount >= cfg.momentumMinBuys && entry.uniqueBuyers.size >= cfg.momentumMinBuyers) {
-    return `MOMENTUM ${timeLeft}s`;
-  }
-  if (cfg.curveEnabled) {
-    return elapsed < cfg.curveObserveSecs ? `OBSERVING ${timeLeft}s` : `CURVE ${timeLeft}s`;
-  }
   return `WATCHING ${timeLeft}s`;
 }
 
@@ -1766,8 +1570,8 @@ function buildEntryStatsHtml(s) {
   if (s.velocitySecs != null) rows.push(`<div class="card-row"><span class="lbl">FILL SPEED</span><span>${s.velocitySecs}s</span></div>`);
   if (s.solVol   != null && s.solVol > 0) rows.push(`<div class="card-row"><span class="lbl">WATCH VOL</span><span>${s.solVol.toFixed(3)} SOL</span></div>`);
   if (s.pumpPct  != null) rows.push(`<div class="card-row"><span class="lbl">PUMP BEFORE BUY</span><span class="${s.pumpPct>=0?'pos':'neg'}">${s.pumpPct>=0?'+':''}${s.pumpPct}%</span></div>`);
-  if (s.curveDip      != null) rows.push(`<div class="card-row"><span class="lbl">CURVE DIP</span><span class="neg">-${s.curveDip}%</span></div>`);
-  if (s.curveRecover  != null) rows.push(`<div class="card-row"><span class="lbl">CURVE RECOVER</span><span class="pos">+${s.curveRecover}%</span></div>`);
+  if (s.dumpPct    != null) rows.push(`<div class="card-row"><span class="lbl">DUMP</span><span class="neg">-${s.dumpPct}%</span></div>`);
+  if (s.reclaimPct != null) rows.push(`<div class="card-row"><span class="lbl">RECLAIM</span><span class="pos">+${s.reclaimPct}%</span></div>`);
   if (s.entryFromPeak != null) rows.push(`<div class="card-row"><span class="lbl">ENTRY FROM PEAK</span><span class="neg">-${s.entryFromPeak}%</span></div>`);
   if (!rows.length) return '';
   return `<hr class="card-hr"><div style="font-size:8px;letter-spacing:1px;color:var(--grey);margin-bottom:3px">ENTRY STATS</div>${rows.join('')}`;
@@ -1795,7 +1599,7 @@ function buildCard(pos, mint) {
   card.innerHTML = `
     <div class="card-top">
       <div>
-        <div class="card-name">${pos.name.slice(0,12).toUpperCase()}${pos.paper ? ' <span style="font-size:8px;background:#ff9800;color:#000;padding:1px 4px;border-radius:2px;vertical-align:middle">PAPER</span>' : ''}${pos.entryStats?.curveDip != null ? ' <span style="font-size:8px;background:var(--amber);color:#000;padding:1px 4px;border-radius:2px;vertical-align:middle">CURVE</span>' : ''}${pos.entryStats?.momentumBuy ? ' <span style="font-size:8px;background:#2196F3;color:#fff;padding:1px 4px;border-radius:2px;vertical-align:middle">MOM</span>' : ''}${pos.partialSold && !isClosed ? ' <span style="font-size:8px;background:#9c27b0;color:#fff;padding:1px 4px;border-radius:2px;vertical-align:middle" id="partial-badge-${mint}">PARTIAL</span>' : `<span style="font-size:8px;background:#9c27b0;color:#fff;padding:1px 4px;border-radius:2px;vertical-align:middle;display:none" id="partial-badge-${mint}">PARTIAL</span>`}</div>
+        <div class="card-name">${pos.name.slice(0,12).toUpperCase()}${pos.paper ? ' <span style="font-size:8px;background:#ff9800;color:#000;padding:1px 4px;border-radius:2px;vertical-align:middle">PAPER</span>' : ''}${pos.entryStats?.dumpPct != null ? ' <span style="font-size:8px;background:var(--amber);color:#000;padding:1px 4px;border-radius:2px;vertical-align:middle">RECLAIM</span>' : ''}${pos.partialSold && !isClosed ? ' <span style="font-size:8px;background:#9c27b0;color:#fff;padding:1px 4px;border-radius:2px;vertical-align:middle" id="partial-badge-${mint}">PARTIAL</span>' : `<span style="font-size:8px;background:#9c27b0;color:#fff;padding:1px 4px;border-radius:2px;vertical-align:middle;display:none" id="partial-badge-${mint}">PARTIAL</span>`}</div>
         <div class="card-pool">[${pos.pool}]</div>
       </div>
       <div style="text-align:right">
