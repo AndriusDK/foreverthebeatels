@@ -431,6 +431,8 @@
         <div class="field"><label>DUMP RECLAIM % (0=off)</label><input type="number" id="s-watchDumpReclaimPct" value="0" min="0" oninput="save('watchDumpReclaimPct',+this.value)"></div>
       </div>
       <div class="field"><label>MIN TIME AFTER LOW (SEC, 0=off)</label><input type="number" id="s-watchDumpReclaimMinSecs" value="3" min="0" step="0.5" oninput="save('watchDumpReclaimMinSecs',+this.value)"></div>
+      <div class="field"><label>RECLAIM HOLD TIME (SEC, 0=off)</label><input type="number" id="s-watchReclaimHoldSecs" value="0" min="0" step="0.5" oninput="save('watchReclaimHoldSecs',+this.value)"></div>
+      <div class="field"><label>MIN BUY/SELL RATIO (0=off)</label><input type="number" id="s-watchMinBSRatio" value="0" min="0" step="0.1" oninput="save('watchMinBSRatio',+this.value)"></div>
     </div>
 
     <div class="sec-head" onclick="toggleSec(this)">SYMBOL COOLDOWN <span>▾</span></div>
@@ -510,7 +512,7 @@ const DEFAULTS = {
   watchEnabled:true, watchSeconds:60, watchMinBuys:5, watchMinBuyers:5,
   watchMinVelocitySecs:1, watchMaxVelocitySecs:26, watchMinSolVol:0, watchMinPumpPct:0, watchMaxPumpPct:90,
   watchBotPumpPct:50, watchBotFillSecs:3,
-  watchMinDumpPct:0, watchDumpReclaimPct:0, watchDumpReclaimMinSecs:3,
+  watchMinDumpPct:0, watchDumpReclaimPct:0, watchDumpReclaimMinSecs:3, watchReclaimHoldSecs:0, watchMinBSRatio:0,
   symCooldownEnabled:true, symCooldownSecs:300,
 };
 
@@ -560,6 +562,12 @@ function loadCfg() {
     localStorage.setItem('drc_cfg', JSON.stringify(cfg));
   }
 
+  // One-time migration v8: add B/S ratio and reclaim hold time fields
+  if (!cfg._v8) {
+    cfg = { ...cfg, watchReclaimHoldSecs: 0, watchMinBSRatio: 0, _v8: true };
+    localStorage.setItem('drc_cfg', JSON.stringify(cfg));
+  }
+
   applyToUI();
 }
 
@@ -574,7 +582,7 @@ function applyToUI() {
    'minMcap','maxMcap','minSolInPool','tpPct','slPct','trailPct','trailActivatePct','timerMin',
    'flatlineSeconds','flatlinePct','scaleOutTp1Pct','scaleOutSellPct',
    'watchSeconds','watchMinBuys','watchMinBuyers','watchMinVelocitySecs','watchMaxVelocitySecs','watchMinSolVol','watchMinPumpPct','watchMaxPumpPct','watchBotPumpPct','watchBotFillSecs',
-   'watchMinDumpPct','watchDumpReclaimPct','watchDumpReclaimMinSecs',
+   'watchMinDumpPct','watchDumpReclaimPct','watchDumpReclaimMinSecs','watchReclaimHoldSecs','watchMinBSRatio',
    'symCooldownSecs'].forEach(k => {
     const el = document.getElementById('s-'+k);
     if (el) el.value = cfg[k];
@@ -862,8 +870,9 @@ function handleCreate(ev) {
     uniqueBuyers:   new Set(),
     sellCount:      0,
     uniqueSellers:  new Set(),
-    solVolume:      0,
-    priceSnapshots: [],
+    solVolume:        0,
+    priceSnapshots:   [],
+    reclaimSatisfiedAt: null,
     timer: null,
   };
   // Expire after watch window
@@ -894,6 +903,16 @@ function handleWatchUpdate(ev) {
       entry.currentMcap = entry.initialMcap * (price / entry.initialPrice);
     entry.priceSnapshots.push(price);
     if (entry.priceSnapshots.length > 40) entry.priceSnapshots.shift();
+
+    // Track when reclaim threshold is first sustained (resets if price drops back below)
+    if (cfg.watchDumpReclaimPct > 0 && entry.localLow > 0) {
+      const rPct = (price - entry.localLow) / entry.localLow * 100;
+      if (rPct >= cfg.watchDumpReclaimPct) {
+        if (!entry.reclaimSatisfiedAt) entry.reclaimSatisfiedAt = Date.now();
+      } else {
+        entry.reclaimSatisfiedAt = null; // fell back below threshold — reset
+      }
+    }
   }
 
   if (txType === 'buy') {
@@ -972,9 +991,15 @@ function handleWatchUpdate(ev) {
   // ── DUMP RECLAIM (optional — both 0 = off) ──────────────────
   const dumpPct    = entry.localHigh > 0 ? (entry.localHigh - entry.localLow) / entry.localHigh * 100 : 0;
   const reclaimPct = entry.localLow  > 0 ? (entry.currentPrice - entry.localLow) / entry.localLow * 100 : 0;
-  if (cfg.watchMinDumpPct > 0 && dumpPct < cfg.watchMinDumpPct) return;         // hasn't dumped enough yet
-  if (cfg.watchDumpReclaimPct > 0 && reclaimPct < cfg.watchDumpReclaimPct) return; // hasn't reclaimed enough yet
+  if (cfg.watchMinDumpPct > 0 && dumpPct < cfg.watchMinDumpPct) return;                               // hasn't dumped enough yet
+  if (cfg.watchDumpReclaimPct > 0 && reclaimPct < cfg.watchDumpReclaimPct) return;                    // hasn't reclaimed enough yet
   if (cfg.watchDumpReclaimMinSecs > 0 && (Date.now() - entry.localLowAt) < cfg.watchDumpReclaimMinSecs * 1000) return; // low too recent — wait
+  if (cfg.watchReclaimHoldSecs > 0 && (!entry.reclaimSatisfiedAt || (Date.now() - entry.reclaimSatisfiedAt) < cfg.watchReclaimHoldSecs * 1000)) return; // reclaim not held long enough
+  if (cfg.watchMinBSRatio > 0 && entry.sellCount > 0 && (entry.buyCount / entry.sellCount) < cfg.watchMinBSRatio) {
+    clearTimeout(entry.timer); watchlist.delete(mint);
+    addLog('skip', `SKIP ${tag} — B/S ratio ${(entry.buyCount/entry.sellCount).toFixed(1)}x < min ${cfg.watchMinBSRatio}x → distribution`);
+    renderWatchCards(); return;
+  }
 
   clearTimeout(entry.timer);
   watchlist.delete(mint);
@@ -1458,9 +1483,10 @@ function watchCardStats(entry) {
   const buysHit   = entry.buyCount >= cfg.watchMinBuys;
   const buyrsHit  = entry.uniqueBuyers.size >= cfg.watchMinBuyers;
   const trendHtml = watchTrendLabel(entry);
-  const bsRatio   = entry.sellCount > 0 ? (entry.buyCount / entry.sellCount).toFixed(1) : null;
-  const sellsHtml = entry.sellCount > 0
-    ? `<span style="color:#e57373">S:${entry.sellCount}/${entry.uniqueSellers.size}u</span>${bsRatio ? ` <span style="color:#aaa">B/S:${bsRatio}</span>` : ''}`
+  const bsRatioVal = entry.sellCount > 0 ? entry.buyCount / entry.sellCount : null;
+  const bsOk       = cfg.watchMinBSRatio <= 0 || bsRatioVal === null || bsRatioVal >= cfg.watchMinBSRatio;
+  const sellsHtml  = entry.sellCount > 0
+    ? `<span style="color:#e57373">S:${entry.sellCount}/${entry.uniqueSellers.size}u</span> <span style="color:${bsOk?'#aaa':'#f44336'}">B/S:${bsRatioVal.toFixed(1)}${cfg.watchMinBSRatio>0?'/'+cfg.watchMinBSRatio:''}x</span>`
     : '';
 
   let reclaimHtml = '';
@@ -1469,8 +1495,12 @@ function watchCardStats(entry) {
     const reclaimPct = entry.localLow  > 0 ? (entry.currentPrice - entry.localLow) / entry.localLow * 100 : 0;
     const dumpHit    = cfg.watchMinDumpPct    <= 0 || dumpPct    >= cfg.watchMinDumpPct;
     const recHit     = cfg.watchDumpReclaimPct <= 0 || reclaimPct >= cfg.watchDumpReclaimPct;
+    const holdSecs   = entry.reclaimSatisfiedAt ? ((Date.now() - entry.reclaimSatisfiedAt) / 1000).toFixed(1) : null;
+    const holdHtml   = cfg.watchReclaimHoldSecs > 0 && recHit
+      ? ` <span style="color:${holdSecs >= cfg.watchReclaimHoldSecs ? '#4caf50' : '#ff9800'}">[${holdSecs ?? 0}s/${cfg.watchReclaimHoldSecs}s]</span>`
+      : '';
     reclaimHtml = `<span class="${dumpHit?'hit':''}">DUMP:-${dumpPct.toFixed(1)}%${cfg.watchMinDumpPct>0?'/'+cfg.watchMinDumpPct+'%':''}</span>
-                   <span class="${recHit?'hit':''}">REC:+${reclaimPct.toFixed(1)}%${cfg.watchDumpReclaimPct>0?'/'+cfg.watchDumpReclaimPct+'%':''}</span>`;
+                   <span class="${recHit?'hit':''}">REC:+${reclaimPct.toFixed(1)}%${cfg.watchDumpReclaimPct>0?'/'+cfg.watchDumpReclaimPct+'%':''}${holdHtml}</span>`;
   }
 
   return `<span class="${buysHit?'hit':''}">BUYS: ${entry.buyCount}/${cfg.watchMinBuys}</span>
